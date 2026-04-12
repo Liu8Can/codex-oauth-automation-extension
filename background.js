@@ -1978,6 +1978,7 @@ async function autoRunLoop(totalRuns, options = {}) {
   let maxAttempts = autoRunSkipFailures ? Math.max(totalRuns * 10, totalRuns + 20) : totalRuns;
   const forcedRetryCap = Math.max(totalRuns * 10, totalRuns + 20);
   let successfulRuns = Math.max(0, resumeSuccessfulRuns);
+  let succeededRuns = Math.max(0, resumeSuccessfulRuns);
   let attemptRuns = Math.max(0, resumeAttemptRunsProcessed);
   let forceFreshTabsNextRun = false;
   let continueCurrentOnFirstAttempt = initialMode === 'continue';
@@ -2068,6 +2069,7 @@ async function autoRunLoop(totalRuns, options = {}) {
       });
 
       successfulRuns += 1;
+      succeededRuns += 1;
       autoRunCurrentRun = successfulRuns;
       await addLog(`=== 目标 ${successfulRuns}/${totalRuns} 轮已完成（第 ${attemptRuns} 次尝试成功）===`, 'ok');
       continue;
@@ -2106,6 +2108,24 @@ async function autoRunLoop(totalRuns, options = {}) {
         break;
       }
 
+      if (isVerificationMailPollingError(err)) {
+        successfulRuns += 1;
+        autoRunCurrentRun = successfulRuns;
+        await addLog(
+          `目标 ${targetRun}/${totalRuns} 轮在收码超时后已截止，本轮按失败结算并进入下一轮新现场。`,
+          'warn'
+        );
+        cancelPendingCommands('当前尝试因收码超时已截止。');
+        await broadcastStopToContentScripts();
+        await broadcastAutoRunStatus('retrying', {
+          currentRun: Math.min(successfulRuns + 1, totalRuns),
+          totalRuns,
+          attemptRun: attemptRuns,
+        });
+        forceFreshTabsNextRun = true;
+        continue;
+      }
+
       await addLog(`目标 ${targetRun}/${totalRuns} 轮的第 ${attemptRuns} 次尝试失败：${err.message}`, 'error');
       await addLog('兜底开关已开启：将放弃当前线程，重新开一轮继续补足目标次数。', 'warn');
       cancelPendingCommands('当前尝试已放弃。');
@@ -2134,7 +2154,15 @@ async function autoRunLoop(totalRuns, options = {}) {
       attemptRun: attemptRuns,
     });
   } else if (successfulRuns >= autoRunTotalRuns) {
-    await addLog(`=== 全部 ${autoRunTotalRuns} 轮均已成功完成，共尝试 ${attemptRuns} 次 ===`, 'ok');
+    if (succeededRuns >= autoRunTotalRuns) {
+      await addLog(`=== 全部 ${autoRunTotalRuns} 轮均已成功完成，共尝试 ${attemptRuns} 次 ===`, 'ok');
+    } else {
+      const failedRuns = Math.max(0, successfulRuns - succeededRuns);
+      await addLog(
+        `=== 全部 ${autoRunTotalRuns} 轮已结束：成功 ${succeededRuns} 轮，失败/截止 ${failedRuns} 轮，共尝试 ${attemptRuns} 次 ===`,
+        'warn'
+      );
+    }
     await broadcastAutoRunStatus('complete', {
       currentRun: successfulRuns,
       totalRuns: autoRunTotalRuns,
