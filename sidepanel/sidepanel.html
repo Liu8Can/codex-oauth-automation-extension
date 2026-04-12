@@ -64,6 +64,13 @@
   <section id="data-section">
     <div class="data-card">
       <div class="data-row">
+        <span class="data-label">来源</span>
+        <select id="select-panel-mode" class="data-select">
+          <option value="cpa">CPA 面板</option>
+          <option value="sub2api">SUB2API</option>
+        </select>
+      </div>
+      <div class="data-row" id="row-vps-url">
         <span class="data-label">CPA</span>
         <div class="input-with-icon">
           <input type="password" id="input-vps-url" class="data-input data-input-with-icon"
@@ -72,9 +79,25 @@
             title="显示 CPA 地址"></button>
         </div>
       </div>
-      <div class="data-row">
+      <div class="data-row" id="row-vps-password">
         <span class="data-label">管理密钥</span>
         <input type="password" id="input-vps-password" class="data-input" placeholder="请输入 CPA 管理密钥" />
+      </div>
+      <div class="data-row" id="row-sub2api-url" style="display:none;">
+        <span class="data-label">SUB2API</span>
+        <input type="text" id="input-sub2api-url" class="data-input" placeholder="https://sub2api.hisence.fun/admin/accounts" />
+      </div>
+      <div class="data-row" id="row-sub2api-email" style="display:none;">
+        <span class="data-label">账号</span>
+        <input type="text" id="input-sub2api-email" class="data-input" placeholder="请输入 SUB2API 登录邮箱" />
+      </div>
+      <div class="data-row" id="row-sub2api-password" style="display:none;">
+        <span class="data-label">密码</span>
+        <input type="password" id="input-sub2api-password" class="data-input" placeholder="请输入 SUB2API 登录密码" />
+      </div>
+      <div class="data-row" id="row-sub2api-group" style="display:none;">
+        <span class="data-label">分组</span>
+        <input type="text" id="input-sub2api-group" class="data-input" placeholder="默认 codex" />
       </div>
       <div class="data-row">
         <span class="data-label">codex密码</span>
@@ -279,7 +302,7 @@
       </div>
       <div class="step-row" data-step="9">
         <div class="step-indicator" data-step="9"><span class="step-num">9</span></div>
-        <button class="step-btn" data-step="9">CPA 回调验证</button>
+        <button class="step-btn" data-step="9">平台回调验证</button>
         <span class="step-status" data-step="9"></span>
       </div>
     </div>

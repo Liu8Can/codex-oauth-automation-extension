@@ -31,6 +31,11 @@ const STOP_ERROR_MESSAGE = '流程已被用户停止。';
 const HUMAN_STEP_DELAY_MIN = 700;
 const HUMAN_STEP_DELAY_MAX = 2200;
 const STEP7_RESTART_MAX_ROUNDS = 8;
+const SUB2API_STEP1_RESPONSE_TIMEOUT_MS = 90000;
+const SUB2API_STEP9_RESPONSE_TIMEOUT_MS = 120000;
+const DEFAULT_SUB2API_URL = 'https://sub2api.hisence.fun/admin/accounts';
+const DEFAULT_SUB2API_GROUP_NAME = 'codex';
+const DEFAULT_SUB2API_REDIRECT_URI = 'http://localhost:1455/auth/callback';
 const AUTO_RUN_ALARM_NAME = 'scheduled-auto-run';
 const AUTO_RUN_DELAY_MIN_MINUTES = 1;
 const AUTO_RUN_DELAY_MAX_MINUTES = 1440;
@@ -42,8 +47,13 @@ initializeSessionStorageAccess();
 // ============================================================
 
 const PERSISTED_SETTING_DEFAULTS = {
+  panelMode: 'cpa', // Step 1 / Step 9 的来源模式：cpa | sub2api。
   vpsUrl: '', // VPS 面板地址，可手动填写。
   vpsPassword: '', // VPS 面板登录密码，可手动填写。
+  sub2apiUrl: DEFAULT_SUB2API_URL, // SUB2API 管理后台地址。
+  sub2apiEmail: '', // SUB2API 登录邮箱。
+  sub2apiPassword: '', // SUB2API 登录密码。
+  sub2apiGroupName: DEFAULT_SUB2API_GROUP_NAME, // SUB2API 创建账号时绑定的分组名。
   customPassword: '', // 自定义账号密码；留空时由程序自动生成随机密码。
   autoRunSkipFailures: false, // 自动运行遇到失败步骤后，是否继续执行后续流程。
   autoRunDelayEnabled: false, // 自动运行是否启用启动前倒计时。
@@ -73,6 +83,10 @@ const DEFAULT_STATE = {
   lastSignupCode: null, // 注册验证码，运行时由程序自动读取并写入。
   lastLoginCode: null, // 登录验证码，运行时由程序自动读取并写入。
   localhostUrl: null, // 运行时捕获到的 localhost 回调地址，不要手动预填。
+  sub2apiSessionId: null, // SUB2API OpenAI Auth 会话 ID。
+  sub2apiOAuthState: null, // SUB2API OpenAI Auth state。
+  sub2apiGroupId: null, // SUB2API 目标分组 ID。
+  sub2apiDraftName: null, // SUB2API 本轮预生成的账号名称。
   flowStartTime: null, // 当前流程开始时间。
   tabRegistry: {}, // 程序维护的标签页注册表。
   sourceLastUrls: {}, // 各来源页面最近一次打开的地址记录。
@@ -919,6 +933,26 @@ function parseUrlSafely(rawUrl) {
   }
 }
 
+function normalizeSub2ApiUrl(rawUrl) {
+  const input = (rawUrl || '').trim() || DEFAULT_SUB2API_URL;
+  const withProtocol = /^https?:\/\//i.test(input) ? input : `https://${input}`;
+  const parsed = new URL(withProtocol);
+  if (!parsed.pathname || parsed.pathname === '/') {
+    parsed.pathname = '/admin/accounts';
+  }
+  parsed.hash = '';
+  return parsed.toString();
+}
+
+function getPanelMode(state = {}) {
+  return state.panelMode === 'sub2api' ? 'sub2api' : 'cpa';
+}
+
+function getPanelModeLabel(modeOrState) {
+  const mode = typeof modeOrState === 'string' ? modeOrState : getPanelMode(modeOrState);
+  return mode === 'sub2api' ? 'SUB2API' : 'CPA';
+}
+
 function isSignupPageHost(hostname = '') {
   return ['auth0.openai.com', 'auth.openai.com', 'accounts.openai.com'].includes(hostname);
 }
@@ -975,6 +1009,14 @@ function matchesSourceUrlFamily(source, candidateUrl, referenceUrl) {
       return Boolean(reference)
         && candidate.origin === reference.origin
         && candidate.pathname === reference.pathname;
+    case 'sub2api-panel':
+      return Boolean(reference)
+        && candidate.origin === reference.origin
+        && (
+          candidate.pathname.startsWith('/admin/accounts')
+          || candidate.pathname.startsWith('/login')
+          || candidate.pathname === '/'
+        );
     default:
       return false;
   }
@@ -1622,6 +1664,7 @@ function getSourceLabel(source) {
     'sidepanel': '侧边栏',
     'signup-page': '认证页',
     'vps-panel': 'CPA 面板',
+    'sub2api-panel': 'SUB2API 后台',
     'qq-mail': 'QQ 邮箱',
     'mail-163': '163 邮箱',
     'inbucket-mail': 'Inbucket 邮箱',
@@ -1753,6 +1796,10 @@ function getDownstreamStateResets(step) {
   if (step <= 1) {
     return {
       oauthUrl: null,
+      sub2apiSessionId: null,
+      sub2apiOAuthState: null,
+      sub2apiGroupId: null,
+      sub2apiDraftName: null,
       flowStartTime: null,
       password: null,
       lastEmailTimestamp: null,
@@ -2384,8 +2431,13 @@ async function handleMessage(message, sender) {
 
     case 'SAVE_SETTING': {
       const updates = {};
+      if (message.payload.panelMode !== undefined) updates.panelMode = message.payload.panelMode;
       if (message.payload.vpsUrl !== undefined) updates.vpsUrl = message.payload.vpsUrl;
       if (message.payload.vpsPassword !== undefined) updates.vpsPassword = message.payload.vpsPassword;
+      if (message.payload.sub2apiUrl !== undefined) updates.sub2apiUrl = message.payload.sub2apiUrl;
+      if (message.payload.sub2apiEmail !== undefined) updates.sub2apiEmail = message.payload.sub2apiEmail;
+      if (message.payload.sub2apiPassword !== undefined) updates.sub2apiPassword = message.payload.sub2apiPassword;
+      if (message.payload.sub2apiGroupName !== undefined) updates.sub2apiGroupName = message.payload.sub2apiGroupName;
       if (message.payload.customPassword !== undefined) updates.customPassword = message.payload.customPassword;
       if (message.payload.autoRunSkipFailures !== undefined) updates.autoRunSkipFailures = Boolean(message.payload.autoRunSkipFailures);
       if (message.payload.autoRunDelayEnabled !== undefined) updates.autoRunDelayEnabled = Boolean(message.payload.autoRunDelayEnabled);
@@ -2510,12 +2562,21 @@ async function handleMessage(message, sender) {
 
 async function handleStepData(step, payload) {
   switch (step) {
-    case 1:
+    case 1: {
+      const updates = {};
       if (payload.oauthUrl) {
-        await setState({ oauthUrl: payload.oauthUrl });
+        updates.oauthUrl = payload.oauthUrl;
         broadcastDataUpdate({ oauthUrl: payload.oauthUrl });
       }
+      if (payload.sub2apiSessionId !== undefined) updates.sub2apiSessionId = payload.sub2apiSessionId || null;
+      if (payload.sub2apiOAuthState !== undefined) updates.sub2apiOAuthState = payload.sub2apiOAuthState || null;
+      if (payload.sub2apiGroupId !== undefined) updates.sub2apiGroupId = payload.sub2apiGroupId || null;
+      if (payload.sub2apiDraftName !== undefined) updates.sub2apiDraftName = payload.sub2apiDraftName || null;
+      if (Object.keys(updates).length) {
+        await setState(updates);
+      }
       break;
+    }
     case 3:
       if (payload.email) await setEmailState(payload.email);
       if (payload.signupVerificationRequestedAt) {
@@ -3244,10 +3305,17 @@ async function resumeAutoRun() {
 }
 
 // ============================================================
-// Step 1: Get OAuth Link (via vps-panel.js)
+// Step 1: Get OAuth Link
 // ============================================================
 
 async function executeStep1(state) {
+  if (getPanelMode(state) === 'sub2api') {
+    return executeSub2ApiStep1(state);
+  }
+  return executeCpaStep1(state);
+}
+
+async function executeCpaStep1(state) {
   if (!state.vpsUrl) {
     throw new Error('尚未配置 CPA 地址，请先在侧边栏填写。');
   }
@@ -3286,6 +3354,63 @@ async function executeStep1(state) {
     timeoutMs: 30000,
     retryDelayMs: 700,
     logMessage: '步骤 1：CPA 面板通信未就绪，正在等待页面恢复...',
+  });
+
+  if (result?.error) {
+    throw new Error(result.error);
+  }
+}
+
+async function executeSub2ApiStep1(state) {
+  const sub2apiUrl = normalizeSub2ApiUrl(state.sub2apiUrl);
+  const groupName = (state.sub2apiGroupName || DEFAULT_SUB2API_GROUP_NAME).trim() || DEFAULT_SUB2API_GROUP_NAME;
+
+  if (!state.sub2apiEmail) {
+    throw new Error('尚未配置 SUB2API 登录邮箱，请先在侧边栏填写。');
+  }
+  if (!state.sub2apiPassword) {
+    throw new Error('尚未配置 SUB2API 登录密码，请先在侧边栏填写。');
+  }
+
+  await addLog('步骤 1：正在打开 SUB2API 后台...');
+
+  const injectFiles = ['content/utils.js', 'content/sub2api-panel.js'];
+
+  await closeConflictingTabsForSource('sub2api-panel', sub2apiUrl);
+
+  const tab = await chrome.tabs.create({ url: sub2apiUrl, active: true });
+  const tabId = tab.id;
+  await rememberSourceLastUrl('sub2api-panel', sub2apiUrl);
+
+  await addLog('步骤 1：SUB2API 页面已打开，正在等待页面进入目标地址...');
+  const matchedTab = await waitForTabUrlFamily('sub2api-panel', tabId, sub2apiUrl, {
+    timeoutMs: 15000,
+    retryDelayMs: 400,
+  });
+  if (!matchedTab) {
+    await addLog('步骤 1：SUB2API 页面尚未稳定，继续尝试连接内容脚本...', 'warn');
+  }
+
+  await ensureContentScriptReadyOnTab('sub2api-panel', tabId, {
+    inject: injectFiles,
+    injectSource: 'sub2api-panel',
+    timeoutMs: 45000,
+    retryDelayMs: 900,
+    logMessage: '步骤 1：SUB2API 页面仍在加载，正在重试连接内容脚本...',
+  });
+
+  const result = await sendToContentScript('sub2api-panel', {
+    type: 'EXECUTE_STEP',
+    step: 1,
+    source: 'background',
+    payload: {
+      sub2apiUrl,
+      sub2apiEmail: state.sub2apiEmail,
+      sub2apiPassword: state.sub2apiPassword,
+      sub2apiGroupName: groupName,
+    },
+  }, {
+    responseTimeoutMs: SUB2API_STEP1_RESPONSE_TIMEOUT_MS,
   });
 
   if (result?.error) {
@@ -3731,11 +3856,7 @@ async function executeStep5(state) {
 // ============================================================
 
 async function refreshOAuthUrlBeforeStep6(state) {
-  if (!state.vpsUrl) {
-    throw new Error('尚未配置 CPA 地址，请先在侧边栏填写。');
-  }
-
-  await addLog('步骤 6：正在刷新登录用的 CPA OAuth 链接...');
+  await addLog(`步骤 6：正在刷新登录用的 ${getPanelModeLabel(state)} OAuth 链接...`);
   console.log(LOG_PREFIX, '[refreshOAuthUrlBeforeStep6] preparing fresh OAuth via step 1');
   const waitForFreshOAuth = waitForStepComplete(1, 120000);
   console.log(LOG_PREFIX, '[refreshOAuthUrlBeforeStep6] executing step 1 for fresh OAuth');
@@ -4272,10 +4393,17 @@ async function executeStep8(state) {
 }
 
 // ============================================================
-// Step 9: CPA 回调验证（通过 vps-panel.js）
+// Step 9: 平台回调验证
 // ============================================================
 
 async function executeStep9(state) {
+  if (getPanelMode(state) === 'sub2api') {
+    return executeSub2ApiStep9(state);
+  }
+  return executeCpaStep9(state);
+}
+
+async function executeCpaStep9(state) {
   if (state.localhostUrl && !isLocalhostOAuthCallbackUrl(state.localhostUrl)) {
     throw new Error('步骤 8 捕获到的 localhost OAuth 回调地址无效，请重新执行步骤 8。');
   }
@@ -4329,6 +4457,73 @@ async function executeStep9(state) {
     timeoutMs: 30000,
     retryDelayMs: 700,
     logMessage: '步骤 9：CPA 面板通信未就绪，正在等待页面恢复...',
+  });
+
+  if (result?.error) {
+    throw new Error(result.error);
+  }
+}
+
+async function executeSub2ApiStep9(state) {
+  if (state.localhostUrl && !isLocalhostOAuthCallbackUrl(state.localhostUrl)) {
+    throw new Error('步骤 8 捕获到的 localhost OAuth 回调地址无效，请重新执行步骤 8。');
+  }
+  if (!state.localhostUrl) {
+    throw new Error('缺少 localhost 回调地址，请先完成步骤 8。');
+  }
+  if (!state.sub2apiSessionId) {
+    throw new Error('缺少 SUB2API 会话信息，请重新执行步骤 1。');
+  }
+  if (!state.sub2apiEmail) {
+    throw new Error('尚未配置 SUB2API 登录邮箱，请先在侧边栏填写。');
+  }
+  if (!state.sub2apiPassword) {
+    throw new Error('尚未配置 SUB2API 登录密码，请先在侧边栏填写。');
+  }
+
+  const sub2apiUrl = normalizeSub2ApiUrl(state.sub2apiUrl);
+  const injectFiles = ['content/utils.js', 'content/sub2api-panel.js'];
+
+  await addLog('步骤 9：正在打开 SUB2API 后台...');
+
+  let tabId = await getTabId('sub2api-panel');
+  const alive = tabId && await isTabAlive('sub2api-panel');
+
+  if (!alive) {
+    tabId = await reuseOrCreateTab('sub2api-panel', sub2apiUrl, {
+      inject: injectFiles,
+      injectSource: 'sub2api-panel',
+      reloadIfSameUrl: true,
+    });
+  } else {
+    await closeConflictingTabsForSource('sub2api-panel', sub2apiUrl, { excludeTabIds: [tabId] });
+    await chrome.tabs.update(tabId, { active: true });
+    await rememberSourceLastUrl('sub2api-panel', sub2apiUrl);
+  }
+
+  await ensureContentScriptReadyOnTab('sub2api-panel', tabId, {
+    inject: injectFiles,
+    injectSource: 'sub2api-panel',
+  });
+
+  await addLog('步骤 9：正在向 SUB2API 提交回调并创建账号...');
+  const result = await sendToContentScript('sub2api-panel', {
+    type: 'EXECUTE_STEP',
+    step: 9,
+    source: 'background',
+    payload: {
+      localhostUrl: state.localhostUrl,
+      sub2apiUrl,
+      sub2apiEmail: state.sub2apiEmail,
+      sub2apiPassword: state.sub2apiPassword,
+      sub2apiGroupName: state.sub2apiGroupName,
+      sub2apiSessionId: state.sub2apiSessionId,
+      sub2apiOAuthState: state.sub2apiOAuthState,
+      sub2apiGroupId: state.sub2apiGroupId,
+      sub2apiDraftName: state.sub2apiDraftName,
+    },
+  }, {
+    responseTimeoutMs: SUB2API_STEP9_RESPONSE_TIMEOUT_MS,
   });
 
   if (result?.error) {
