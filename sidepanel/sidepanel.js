@@ -187,6 +187,10 @@ const sidepanelUpdateService = window.SidepanelUpdateService;
 
 btnAutoCancelSchedule?.remove();
 const MAIL_PROVIDER_LOGIN_CONFIGS = {
+  gmail: {
+    label: 'Gmail 邮箱',
+    url: 'https://mail.google.com/mail/u/0/?tab=rm&ogbl#inbox',
+  },
   '163': {
     label: '163 邮箱',
     url: 'https://mail.163.com/',
@@ -226,7 +230,27 @@ const LOG_LEVEL_LABELS = {
 };
 
 function usesGeneratedAliasMailProvider(provider) {
-  return provider === '2925';
+  return provider === '2925' || provider === 'gmail';
+}
+
+function parseGmailBaseEmail(rawValue = '') {
+  const value = String(rawValue || '').trim().toLowerCase();
+  const match = value.match(/^([^@\s+]+)@((?:gmail|googlemail)\.com)$/i);
+  if (!match) return null;
+  return {
+    localPart: match[1],
+    domain: match[2].toLowerCase(),
+  };
+}
+
+function isManagedGmailAlias(value, baseEmail) {
+  const parsedBase = parseGmailBaseEmail(baseEmail);
+  if (!parsedBase) return false;
+
+  const match = String(value || '').trim().toLowerCase().match(/^([^@\s+]+)(?:\+[^@\s]+)?@((?:gmail|googlemail)\.com)$/i);
+  if (!match) return false;
+
+  return match[1] === parsedBase.localPart && match[2] === parsedBase.domain;
 }
 
 function showToast(message, type = 'error', duration = 4000) {
@@ -1580,6 +1604,11 @@ function isCurrentEmailManagedByGeneratedAlias(provider = latestState?.mailProvi
     return inputEmailValue.endsWith('@2925.com') || stateEmailValue.endsWith('@2925.com');
   }
 
+  if (normalizedProvider === 'gmail') {
+    const baseEmail = String(state?.emailPrefix || inputEmailPrefix.value || '').trim();
+    return isManagedGmailAlias(inputEmailValue, baseEmail) || isManagedGmailAlias(stateEmailValue, baseEmail);
+  }
+
   return false;
 }
 
@@ -1803,6 +1832,7 @@ function renderHotmailAccounts() {
 
 function updateMailProviderUI() {
   const use2925 = selectMailProvider.value === '2925';
+  const useGmail = selectMailProvider.value === 'gmail';
   const useGeneratedAlias = usesGeneratedAliasMailProvider(selectMailProvider.value);
   const useInbucket = selectMailProvider.value === 'inbucket';
   const useHotmail = selectMailProvider.value === 'hotmail-api';
@@ -1829,8 +1859,8 @@ function updateMailProviderUI() {
   if (hotmailSection) {
     hotmailSection.style.display = useHotmail ? '' : 'none';
   }
-  labelEmailPrefix.textContent = '邮箱前缀';
-  inputEmailPrefix.placeholder = '例如 abc';
+  labelEmailPrefix.textContent = useGmail ? 'Gmail 原邮箱' : '邮箱前缀';
+  inputEmailPrefix.placeholder = useGmail ? '例如 yourname@gmail.com' : '例如 abc';
   selectEmailGenerator.disabled = useHotmail || useGeneratedAlias || useCustomEmail;
   if (rowHotmailServiceMode) {
     rowHotmailServiceMode.style.display = useHotmail ? '' : 'none';
@@ -1846,7 +1876,9 @@ function updateMailProviderUI() {
   const uiCopy = useCustomEmail ? getCustomMailProviderUiCopy() : getEmailGeneratorUiCopy();
   inputEmail.placeholder = useHotmail
     ? '由 Hotmail 账号池自动分配'
-    : (use2925 ? '步骤 3 自动生成 2925 邮箱并回填' : uiCopy.placeholder);
+    : (use2925
+      ? '步骤 3 自动生成 2925 邮箱并回填'
+      : (useGmail ? '步骤 3 自动生成 Gmail +tag 邮箱并回填' : uiCopy.placeholder));
   btnFetchEmail.disabled = useGeneratedAlias || useCustomEmail || isAutoRunLockedPhase();
   if (!btnFetchEmail.disabled) {
     btnFetchEmail.textContent = uiCopy.buttonLabel;
@@ -1855,7 +1887,7 @@ function updateMailProviderUI() {
     autoHintText.textContent = useHotmail
       ? '请先校验并选择一个 Hotmail 账号'
       : (useGeneratedAlias
-        ? '步骤 3 会自动生成邮箱，无需手动获取'
+        ? (useGmail ? '请先填写 Gmail 原邮箱，步骤 3 会自动生成 Gmail +tag 地址' : '步骤 3 会自动生成邮箱，无需手动获取')
         : (useCustomEmail ? '请先填写自定义注册邮箱，成功一轮后会自动清空' : '先自动获取邮箱，或手动粘贴邮箱后再继续'));
   }
   if (useHotmail) {
@@ -2405,7 +2437,7 @@ document.querySelectorAll('.step-btn').forEach(btn => {
         } else if (usesGeneratedAliasMailProvider(selectMailProvider.value)) {
           const emailPrefix = inputEmailPrefix.value.trim();
           if (!emailPrefix) {
-            showToast('请先填写 2925 邮箱前缀。', 'warn');
+            showToast(selectMailProvider.value === 'gmail' ? '请先填写 Gmail 原邮箱。' : '请先填写 2925 邮箱前缀。', 'warn');
             return;
           }
           const response = await chrome.runtime.sendMessage({ type: 'EXECUTE_STEP', source: 'sidepanel', payload: { step, emailPrefix } });
