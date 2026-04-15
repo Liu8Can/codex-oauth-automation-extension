@@ -52,7 +52,14 @@ function extractFunction(name) {
 
 const bundle = [
   extractFunction('getTabRegistry'),
+  extractFunction('normalizeEmailGenerator'),
+  extractFunction('normalizeMail2925Mode'),
+  extractFunction('getMail2925Mode'),
   extractFunction('parseUrlSafely'),
+  extractFunction('isHotmailProvider'),
+  extractFunction('isCustomMailProvider'),
+  extractFunction('isGeneratedAliasProvider'),
+  extractFunction('shouldUseCustomRegistrationEmail'),
   extractFunction('isLocalhostOAuthCallbackUrl'),
   extractFunction('isLocalhostOAuthCallbackTabMatch'),
   extractFunction('closeLocalhostCallbackTabs'),
@@ -62,6 +69,12 @@ const bundle = [
 ].join('\n');
 
 const api = new Function(`
+const HOTMAIL_PROVIDER = 'hotmail-api';
+const CLOUDFLARE_TEMP_EMAIL_PROVIDER = 'cloudflare-temp-email';
+const CLOUDFLARE_TEMP_EMAIL_GENERATOR = 'cloudflare-temp-email';
+const MAIL_2925_MODE_PROVIDE = 'provide';
+const MAIL_2925_MODE_RECEIVE = 'receive';
+const DEFAULT_MAIL_2925_MODE = MAIL_2925_MODE_PROVIDE;
 let currentState = {
   tabRegistry: {
     'signup-page': { tabId: 1, ready: true },
@@ -96,10 +109,35 @@ async function setEmailState(email) {
   currentState = { ...currentState, email };
 }
 
+async function setEmailStateSilently(email) {
+  currentState = { ...currentState, email };
+}
+
+function isHotmailProvider() {
+  return false;
+}
+
+function isLuckmailProvider() {
+  return false;
+}
+
+async function patchHotmailAccount() {}
+
+async function clearLuckmailRuntimeState() {}
+
+function shouldUseCustomRegistrationEmail() {
+  return false;
+}
+
 function broadcastDataUpdate() {}
 
 async function addLog(message) {
   logMessages.push(message);
+}
+
+async function finalizeIcloudAliasAfterSuccessfulFlow() {}
+function shouldUseCustomRegistrationEmail() {
+  return false;
 }
 
 ${bundle}

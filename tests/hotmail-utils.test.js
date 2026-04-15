@@ -12,6 +12,7 @@ const {
   getHotmailMailApiRequestConfig,
   getHotmailVerificationPollConfig,
   getHotmailVerificationRequestTimestamp,
+  normalizeHotmailServiceMode,
   normalizeHotmailMailApiMessages,
   parseHotmailImportText,
   pickHotmailAccountForRun,
@@ -459,6 +460,14 @@ test('getHotmailMailApiRequestConfig defines third-party mail API request defaul
   assert.deepEqual(getHotmailMailApiRequestConfig(), {
     timeoutMs: 15000,
   });
+});
+
+test('normalizeHotmailServiceMode supports API对接 remote 模式并默认回退到本地助手', () => {
+  assert.equal(normalizeHotmailServiceMode('remote'), 'remote');
+  assert.equal(normalizeHotmailServiceMode('REMOTE'), 'remote');
+  assert.equal(normalizeHotmailServiceMode('local'), 'local');
+  assert.equal(normalizeHotmailServiceMode(''), 'local');
+  assert.equal(normalizeHotmailServiceMode('unknown'), 'local');
 });
 
 test('parseHotmailImportText parses account lines in email----password----clientId----token format', () => {

@@ -173,6 +173,102 @@ function getRowFingerprint(row, index = 0) {
   return `${stableId}::${preview.subject}::${preview.timeText}`.slice(0, 300);
 }
 
+function normalizeMinuteTimestamp(timestamp) {
+  const numeric = Number(timestamp);
+  if (!Number.isFinite(numeric) || numeric <= 0) return 0;
+  return Math.floor(numeric / 60000) * 60000;
+}
+
+function extractEmails(text) {
+  const matches = String(text || '').match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/ig) || [];
+  return [...new Set(matches.map((item) => item.toLowerCase()))];
+}
+
+function emailMatchesTarget(candidate, targetEmail) {
+  const normalizedCandidate = String(candidate || '').trim().toLowerCase();
+  const normalizedTarget = String(targetEmail || '').trim().toLowerCase();
+  return Boolean(normalizedCandidate && normalizedTarget && normalizedCandidate === normalizedTarget);
+}
+
+function getTargetEmailMatchState(text, targetEmail) {
+  const normalizedTarget = String(targetEmail || '').trim().toLowerCase();
+  if (!normalizedTarget) {
+    return { matches: true, hasExplicitEmail: false };
+  }
+
+  const normalizedText = String(text || '').toLowerCase();
+  if (normalizedText.includes(normalizedTarget)) {
+    return { matches: true, hasExplicitEmail: true };
+  }
+
+  const atIndex = normalizedTarget.indexOf('@');
+  if (atIndex > 0) {
+    const encodedTarget = `${normalizedTarget.slice(0, atIndex)}=${normalizedTarget.slice(atIndex + 1)}`;
+    if (normalizedText.includes(encodedTarget)) {
+      return { matches: true, hasExplicitEmail: true };
+    }
+  }
+
+  const emails = extractEmails(text);
+  if (!emails.length) {
+    return { matches: false, hasExplicitEmail: false };
+  }
+
+  return {
+    matches: emails.some((email) => emailMatchesTarget(email, normalizedTarget)),
+    hasExplicitEmail: true,
+  };
+}
+
+function parseGmailTimestamp(timeText) {
+  const normalized = normalizeText(timeText);
+  if (!normalized) return null;
+
+  let match = normalized.match(/(\d{4})年(\d{1,2})月(\d{1,2})日(?:周.|星期.)?\s*(\d{1,2}):(\d{2})/);
+  if (match) {
+    return new Date(
+      Number(match[1]),
+      Number(match[2]) - 1,
+      Number(match[3]),
+      Number(match[4]),
+      Number(match[5]),
+      0,
+      0
+    ).getTime();
+  }
+
+  match = normalized.match(/(\d{1,2})月(\d{1,2})日(?:周.|星期.)?\s*(\d{1,2}):(\d{2})/);
+  if (match) {
+    const now = new Date();
+    return new Date(
+      now.getFullYear(),
+      Number(match[1]) - 1,
+      Number(match[2]),
+      Number(match[3]),
+      Number(match[4]),
+      0,
+      0
+    ).getTime();
+  }
+
+  match = normalized.match(/^(\d{1,2}):(\d{2})$/);
+  if (match) {
+    const now = new Date();
+    return new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate(),
+      Number(match[1]),
+      Number(match[2]),
+      0,
+      0
+    ).getTime();
+  }
+
+  const parsed = Date.parse(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 function extractVerificationCode(text) {
   const normalized = String(text || '');
 
@@ -206,19 +302,10 @@ function rowMatchesFilters(preview, senderFilters, subjectFilters) {
   return senderMatch || subjectMatch;
 }
 
-function extractCodeFromFullPage(senderFilters = [], subjectFilters = []) {
-  const pageText = normalizeText(document.body?.innerText || document.body?.textContent || '');
-  if (!pageText) return null;
-
-  const filters = [...senderFilters, ...subjectFilters]
-    .map((item) => String(item || '').trim().toLowerCase())
-    .filter(Boolean);
-
-  if (filters.length && !filters.some((item) => pageText.toLowerCase().includes(item))) {
-    return null;
-  }
-
-  return extractVerificationCode(pageText);
+async function openThreadRow(row) {
+  simulateClick(row);
+  await sleep(1200);
+  return normalizeText(document.body?.innerText || document.body?.textContent || '');
 }
 
 async function ensureInboxReady(step) {
@@ -273,12 +360,19 @@ async function handlePollEmail(step, payload) {
     subjectFilters = [],
     maxAttempts = 5,
     intervalMs = 3000,
+    filterAfterTimestamp = 0,
     excludeCodes = [],
+    targetEmail = '',
   } = payload || {};
 
   const excludedCodeSet = new Set(excludeCodes.filter(Boolean));
+  const inspectedMailIds = new Set();
+  const filterAfterMinute = normalizeMinuteTimestamp(Number(filterAfterTimestamp) || 0);
 
   log(`步骤 ${step}：开始轮询 Gmail（最多 ${maxAttempts} 次）`);
+  if (filterAfterMinute) {
+    log(`步骤 ${step}：仅尝试 ${new Date(filterAfterMinute).toLocaleString('zh-CN', { hour12: false })} 及之后时间的邮件。`);
+  }
 
   let rows = await ensureInboxReady(step);
   if (!rows.length) {
@@ -290,7 +384,14 @@ async function handlePollEmail(step, payload) {
     throw new Error('Gmail 收件箱列表未加载完成，请确认当前已打开 Gmail 收件箱。');
   }
 
+  const existingMailIds = new Set(rows.map((row, index) => getRowFingerprint(row, index)));
+  log(`步骤 ${step}：邮件列表已加载，共 ${rows.length} 封邮件`);
+  log(`步骤 ${step}：已记录当前 ${existingMailIds.size} 封旧邮件快照`);
+
+  const FALLBACK_AFTER = 3;
+
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    throwIfStopped();
     log(`步骤 ${step}：正在轮询 Gmail，第 ${attempt}/${maxAttempts} 次`);
 
     if (attempt > 1) {
@@ -298,51 +399,110 @@ async function handlePollEmail(step, payload) {
     }
 
     rows = collectThreadRows();
+    const useFallback = attempt > FALLBACK_AFTER;
+    let index = 0;
 
-    for (let index = 0; index < rows.length; index++) {
+    while (index < rows.length) {
+      throwIfStopped();
       const row = rows[index];
+      const rowId = getRowFingerprint(row, index);
       const preview = getRowPreviewText(row);
+      const mailTimestamp = parseGmailTimestamp(preview.timeText);
+      const mailMinute = normalizeMinuteTimestamp(mailTimestamp || 0);
+      const passesTimeFilter = !filterAfterMinute || (mailMinute && mailMinute >= filterAfterMinute);
+      const shouldBypassOldSnapshot = Boolean(filterAfterMinute && passesTimeFilter && mailMinute > 0);
+
+      if (!passesTimeFilter) {
+        index += 1;
+        continue;
+      }
+
+      if (!useFallback && !shouldBypassOldSnapshot && existingMailIds.has(rowId)) {
+        index += 1;
+        continue;
+      }
+
       if (!rowMatchesFilters(preview, senderFilters, subjectFilters)) {
+        index += 1;
+        continue;
+      }
+
+      const previewTargetState = getTargetEmailMatchState(preview.combinedText, targetEmail);
+      const previewEmails = extractEmails(preview.combinedText);
+      if (targetEmail && previewEmails.length > 0 && !previewTargetState.matches) {
+        index += 1;
         continue;
       }
 
       const code = extractVerificationCode(preview.combinedText);
-      if (!code) {
+      if (code && previewTargetState.matches) {
+        if (excludedCodeSet.has(code)) {
+          log(`步骤 ${step}：跳过排除的验证码：${code}`, 'info');
+          index += 1;
+          continue;
+        }
+
+        const source = useFallback && existingMailIds.has(rowId) ? '回退匹配邮件' : '新邮件';
+        const timeLabel = mailTimestamp ? `，时间：${new Date(mailTimestamp).toLocaleString('zh-CN', { hour12: false })}` : '';
+        log(`步骤 ${step}：已在 Gmail 找到验证码：${code}（来源：${source}${timeLabel}，主题：${preview.subject.slice(0, 40)}）`, 'ok');
+        return {
+          ok: true,
+          code,
+          emailTimestamp: mailTimestamp || Date.now(),
+          mailId: rowId,
+        };
+      }
+
+      if (inspectedMailIds.has(rowId)) {
+        index += 1;
         continue;
       }
 
-      if (excludedCodeSet.has(code)) {
-        log(`步骤 ${step}：跳过排除的验证码：${code}`, 'info');
+      inspectedMailIds.add(rowId);
+      const openedText = await openThreadRow(row);
+      const openedTargetState = getTargetEmailMatchState(openedText, targetEmail);
+      if (targetEmail && openedTargetState.hasExplicitEmail && !openedTargetState.matches) {
+        rows = await ensureInboxReady(step);
+        index = 0;
         continue;
       }
 
-      log(`步骤 ${step}：已在 Gmail 找到验证码：${code}（主题：${preview.subject.slice(0, 40)}）`, 'ok');
-      return {
-        ok: true,
-        code,
-        emailTimestamp: Date.now(),
-        mailId: getRowFingerprint(row, index),
-      };
+      const openedCode = extractVerificationCode(openedText);
+      if (openedCode) {
+        if (excludedCodeSet.has(openedCode)) {
+          log(`步骤 ${step}：跳过排除的验证码：${openedCode}`, 'info');
+          rows = await ensureInboxReady(step);
+          index = 0;
+          continue;
+        }
+
+        const source = useFallback && existingMailIds.has(rowId) ? '回退匹配邮件正文' : '新邮件正文';
+        const timeLabel = mailTimestamp ? `，时间：${new Date(mailTimestamp).toLocaleString('zh-CN', { hour12: false })}` : '';
+        log(`步骤 ${step}：已在 Gmail 邮件正文中找到验证码：${openedCode}（来源：${source}${timeLabel}）`, 'ok');
+        return {
+          ok: true,
+          code: openedCode,
+          emailTimestamp: mailTimestamp || Date.now(),
+          mailId: rowId,
+        };
+      }
+
+      rows = await ensureInboxReady(step);
+      index = 0;
     }
 
-    const pageCode = extractCodeFromFullPage(senderFilters, subjectFilters);
-    if (pageCode && !excludedCodeSet.has(pageCode)) {
-      log(`步骤 ${step}：已从 Gmail 页面全文提取到验证码：${pageCode}`, 'ok');
-      return {
-        ok: true,
-        code: pageCode,
-        emailTimestamp: Date.now(),
-        mailId: `page-${attempt}`,
-      };
+    if (attempt === FALLBACK_AFTER + 1) {
+      log(`步骤 ${step}：连续 ${FALLBACK_AFTER} 次未发现新邮件，开始回退到较早的匹配邮件`, 'warn');
     }
 
     if (attempt < maxAttempts) {
+      throwIfStopped();
       await sleep(intervalMs);
     }
   }
 
   throw new Error(
-    `${(maxAttempts * intervalMs / 1000).toFixed(0)} 秒后仍未在 Gmail 中找到匹配邮件。请手动检查 Gmail 收件箱。`
+    `${(maxAttempts * intervalMs / 1000).toFixed(0)} 秒后仍未在 Gmail 中找到新的匹配邮件。请手动检查 Gmail 收件箱。`
   );
 }
 

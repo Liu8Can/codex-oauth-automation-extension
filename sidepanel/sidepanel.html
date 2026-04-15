@@ -153,15 +153,24 @@
         <div class="data-inline">
           <select id="select-mail-provider" class="data-select">
             <option value="custom">自定义邮箱</option>
-            <option value="hotmail-api">Hotmail（本地助手）</option>
             <option value="gmail">Gmail 邮箱 (mail.google.com)</option>
+            <option value="hotmail-api">Hotmail（账号池）</option>
+            <option value="luckmail-api">LuckMail（API 购邮）</option>
             <option value="163">163 邮箱 (mail.163.com)</option>
             <option value="163-vip">163 VIP 邮箱 (vip.163.com)</option>
             <option value="qq">QQ 邮箱 (wx.mail.qq.com)</option>
             <option value="inbucket">Inbucket（自定义主机）</option>
             <option value="2925">2925 邮箱 (2925.com)</option>
+            <option value="cloudflare-temp-email">Cloudflare Temp Email</option>
           </select>
           <button id="btn-mail-login" class="btn btn-outline btn-sm data-inline-btn" type="button" disabled>登录</button>
+        </div>
+      </div>
+      <div class="data-row" id="row-mail-2925-mode" style="display:none;">
+        <span class="data-label">2925 模式</span>
+        <div id="mail-2925-mode-group" class="choice-group" role="group" aria-label="2925 邮箱模式">
+          <button type="button" class="choice-btn" data-mail2925-mode="provide">提供邮箱</button>
+          <button type="button" class="choice-btn" data-mail2925-mode="receive">接收邮箱</button>
         </div>
       </div>
       <div class="data-row" id="row-email-generator">
@@ -169,7 +178,30 @@
         <select id="select-email-generator" class="data-select">
           <option value="duck">DuckDuckGo</option>
           <option value="cloudflare">Cloudflare</option>
+          <option value="icloud">iCloud 隐私邮箱</option>
+          <option value="cloudflare-temp-email">Cloudflare Temp Email</option>
         </select>
+      </div>
+      <div class="data-row" id="row-temp-email-base-url" style="display:none;">
+        <span class="data-label">Temp API</span>
+        <input type="text" id="input-temp-email-base-url" class="data-input" placeholder="https://your-worker-domain" />
+      </div>
+      <div class="data-row" id="row-temp-email-admin-auth" style="display:none;">
+        <span class="data-label">Admin Auth</span>
+        <input type="password" id="input-temp-email-admin-auth" class="data-input data-input-with-icon" placeholder="Cloudflare Temp Email admin password" />
+      </div>
+      <div class="data-row" id="row-temp-email-custom-auth" style="display:none;">
+        <span class="data-label">Custom Auth</span>
+        <input type="password" id="input-temp-email-custom-auth" class="data-input data-input-with-icon" placeholder="仅当站点启用了访问密码时再填写；这是额外鉴权，不替代 Admin Auth。" />
+      </div>
+      <div class="data-row" id="row-temp-email-domain" style="display:none;">
+        <span class="data-label">Temp 域名</span>
+        <div class="data-inline">
+          <select id="select-temp-email-domain" class="data-select"></select>
+          <input type="text" id="input-temp-email-domain" class="data-input" placeholder="例如 mail.example.com"
+            style="display:none;" />
+          <button id="btn-temp-email-domain-mode" class="btn btn-outline btn-sm" type="button">添加</button>
+        </div>
       </div>
       <div class="data-row" id="row-cf-domain" style="display:none;">
         <span class="data-label">CF 域名</span>
@@ -272,13 +304,13 @@
       <div class="data-row" id="row-hotmail-service-mode">
         <span class="data-label">接码模式</span>
         <div id="hotmail-service-mode-group" class="choice-group" role="group" aria-label="Hotmail 接码模式">
-          <button type="button" class="choice-btn" data-hotmail-service-mode="remote" disabled title="远程服务暂时禁用">远程服务</button>
+          <button type="button" class="choice-btn" data-hotmail-service-mode="remote">API对接</button>
           <button type="button" class="choice-btn" data-hotmail-service-mode="local">本地助手</button>
         </div>
       </div>
       <div class="data-row" id="row-hotmail-remote-base-url">
-        <span class="data-label">远程服务</span>
-        <input type="text" id="input-hotmail-remote-base-url" class="data-input mono" placeholder="请输入远程服务地址" />
+        <span class="data-label">API对接</span>
+        <input type="text" id="input-hotmail-remote-base-url" class="data-input mono" placeholder="微软邮箱 API 对接模式无需填写地址" />
       </div>
       <div class="data-row" id="row-hotmail-local-base-url" style="display:none;">
         <span class="data-label">本地助手</span>
@@ -315,6 +347,137 @@
       </div>
       <div id="hotmail-list-shell" class="hotmail-list-shell is-collapsed">
         <div id="hotmail-accounts-list" class="hotmail-accounts-list"></div>
+      </div>
+    </div>
+    <div id="luckmail-section" class="data-card luckmail-card" style="display:none;">
+      <div class="section-mini-header">
+        <div class="section-mini-copy">
+          <span class="section-label">LuckMail 配置</span>
+        </div>
+      </div>
+      <div class="data-row">
+        <span class="data-label">API Key</span>
+        <input type="password" id="input-luckmail-api-key" class="data-input mono" placeholder="请输入 LuckMail API Key" />
+      </div>
+      <div class="data-row">
+        <span class="data-label">Base URL</span>
+        <input type="text" id="input-luckmail-base-url" class="data-input mono" placeholder="https://mails.luckyous.com" />
+      </div>
+      <div class="data-row">
+        <span class="data-label">邮箱类型</span>
+        <select id="select-luckmail-email-type" class="data-select">
+          <option value="self_built">自建邮箱</option>
+          <option value="ms_imap">微软 IMAP</option>
+          <option value="ms_graph">微软 Graph</option>
+          <option value="google_variant">谷歌变种</option>
+        </select>
+      </div>
+      <div class="data-row">
+        <span class="data-label">域名</span>
+        <input type="text" id="input-luckmail-domain" class="data-input mono" placeholder="可选，留空则由 LuckMail 默认处理" />
+      </div>
+      <div class="data-row">
+        <span class="data-label">项目</span>
+        <span class="data-value mono">openai</span>
+      </div>
+      <div class="luckmail-manager-card">
+        <div class="section-mini-header">
+          <div class="section-mini-copy">
+            <span class="section-label">LuckMail 邮箱列表</span>
+            <span class="data-value">仅显示项目为 <span class="mono">openai</span> 的邮箱</span>
+          </div>
+          <div class="section-mini-actions">
+            <button id="btn-luckmail-refresh" class="btn btn-ghost btn-xs" type="button">刷新</button>
+            <button id="btn-luckmail-disable-used" class="btn btn-ghost btn-xs" type="button">禁用已用</button>
+          </div>
+        </div>
+        <div id="luckmail-summary" class="luckmail-summary">加载已购邮箱后可在这里管理 openai 项目的 LuckMail 邮箱。</div>
+        <div class="luckmail-toolbar">
+          <input id="input-luckmail-search" class="data-input luckmail-search" type="text" placeholder="搜索邮箱 / 标签 / 项目" />
+          <select id="select-luckmail-filter" class="data-select luckmail-filter">
+            <option value="all">全部</option>
+            <option value="reusable">可复用</option>
+            <option value="used">已用</option>
+            <option value="unused">未用</option>
+            <option value="preserved">保留</option>
+            <option value="disabled">已禁用</option>
+          </select>
+        </div>
+        <div class="luckmail-bulkbar">
+          <label class="option-toggle luckmail-select-all" for="checkbox-luckmail-select-all">
+            <input type="checkbox" id="checkbox-luckmail-select-all" />
+            <span id="luckmail-selection-summary">已选 0 个</span>
+          </label>
+          <div class="luckmail-bulk-actions">
+            <button id="btn-luckmail-bulk-used" class="btn btn-outline btn-xs" type="button">标记已用</button>
+            <button id="btn-luckmail-bulk-unused" class="btn btn-outline btn-xs" type="button">标记未用</button>
+            <button id="btn-luckmail-bulk-preserve" class="btn btn-outline btn-xs" type="button">保留</button>
+            <button id="btn-luckmail-bulk-unpreserve" class="btn btn-outline btn-xs" type="button">取消保留</button>
+            <button id="btn-luckmail-bulk-disable" class="btn btn-outline btn-xs" type="button">禁用</button>
+            <button id="btn-luckmail-bulk-enable" class="btn btn-outline btn-xs" type="button">启用</button>
+          </div>
+        </div>
+        <div id="luckmail-list" class="luckmail-list"></div>
+      </div>
+    </div>
+    <div id="icloud-section" class="data-card hotmail-card" style="display:none;">
+      <div class="section-mini-header">
+        <div class="section-mini-copy">
+          <span class="section-label">iCloud 隐私邮箱</span>
+        </div>
+        <div class="section-mini-actions">
+          <button id="btn-icloud-refresh" class="btn btn-ghost btn-xs" type="button">刷新</button>
+          <button id="btn-icloud-delete-used" class="btn btn-ghost btn-xs" type="button">删除已用</button>
+        </div>
+      </div>
+      <div class="data-row">
+        <span class="data-label">iCloud</span>
+        <select id="select-icloud-host-preference" class="data-select">
+          <option value="auto">自动</option>
+          <option value="icloud.com">iCloud.com</option>
+          <option value="icloud.com.cn">iCloud.com.cn</option>
+        </select>
+      </div>
+      <div class="data-row">
+        <span class="data-label">自动删除</span>
+        <label class="option-toggle" for="checkbox-auto-delete-icloud">
+          <input type="checkbox" id="checkbox-auto-delete-icloud" />
+          <span>成功使用后自动删除 iCloud 别名</span>
+        </label>
+      </div>
+      <div class="icloud-card">
+        <div id="icloud-summary" class="icloud-summary">加载你的 iCloud Hide My Email 别名以便在这里管理。</div>
+        <div id="icloud-login-help" class="icloud-login-help" style="display:none;">
+          <div class="icloud-login-help-main">
+            <div id="icloud-login-help-title" class="icloud-login-help-title">需要登录 iCloud</div>
+            <div id="icloud-login-help-text" class="icloud-login-help-text">我已经为你打开 iCloud 登录页。请在那个页面完成登录，然后回到这里点击“我已登录”。</div>
+          </div>
+          <button id="btn-icloud-login-done" class="btn btn-primary btn-xs" type="button">我已登录</button>
+        </div>
+        <div class="icloud-toolbar">
+          <input id="input-icloud-search" class="data-input icloud-search" type="text" placeholder="搜索邮箱 / 标签 / 备注" />
+          <select id="select-icloud-filter" class="data-select icloud-filter">
+            <option value="all">全部</option>
+            <option value="active">可用</option>
+            <option value="used">已用</option>
+            <option value="unused">未用</option>
+            <option value="preserved">保留</option>
+          </select>
+        </div>
+        <div class="icloud-bulkbar">
+          <label class="option-toggle icloud-select-all" for="checkbox-icloud-select-all">
+            <input type="checkbox" id="checkbox-icloud-select-all" />
+            <span id="icloud-selection-summary">已选 0 个</span>
+          </label>
+          <div class="icloud-bulk-actions">
+            <button id="btn-icloud-bulk-used" class="btn btn-outline btn-xs" type="button">标记已用</button>
+            <button id="btn-icloud-bulk-unused" class="btn btn-outline btn-xs" type="button">标记未用</button>
+            <button id="btn-icloud-bulk-preserve" class="btn btn-outline btn-xs" type="button">保留</button>
+            <button id="btn-icloud-bulk-unpreserve" class="btn btn-outline btn-xs" type="button">取消保留</button>
+            <button id="btn-icloud-bulk-delete" class="btn btn-outline btn-xs" type="button">删除</button>
+          </div>
+        </div>
+        <div id="icloud-list" class="icloud-list"></div>
       </div>
     </div>
     <div id="status-bar" class="status-bar">
@@ -433,6 +596,7 @@
   <div id="toast-container"></div>
   <input id="input-import-settings-file" type="file" accept=".json,application/json" hidden />
   <script src="../hotmail-utils.js"></script>
+  <script src="../luckmail-utils.js"></script>
   <script src="update-service.js"></script>
   <script src="sidepanel.js"></script>
 </body>

@@ -7,6 +7,8 @@
   root.HotmailUtils = factory();
 })(typeof self !== 'undefined' ? self : globalThis, function createHotmailUtils() {
   const HOTMAIL_MAIL_API_URL = 'https://apple.882263.xyz/api/mail-new';
+  const HOTMAIL_SERVICE_MODE_REMOTE = 'remote';
+  const HOTMAIL_SERVICE_MODE_LOCAL = 'local';
 
   function normalizeText(value) {
     return String(value || '')
@@ -23,6 +25,12 @@
 
     const timestamp = Date.parse(value);
     return Number.isFinite(timestamp) ? timestamp : 0;
+  }
+
+  function normalizeHotmailServiceMode(rawValue = '') {
+    return String(rawValue || '').trim().toLowerCase() === HOTMAIL_SERVICE_MODE_REMOTE
+      ? HOTMAIL_SERVICE_MODE_REMOTE
+      : HOTMAIL_SERVICE_MODE_LOCAL;
   }
 
   function extractVerificationCode(text) {
@@ -368,6 +376,7 @@
     getHotmailVerificationPollConfig,
     getHotmailVerificationRequestTimestamp,
     isAuthorizedHotmailAccount,
+    normalizeHotmailServiceMode,
     normalizeHotmailMailApiMessages,
     normalizeTimestamp,
     parseHotmailImportText,
