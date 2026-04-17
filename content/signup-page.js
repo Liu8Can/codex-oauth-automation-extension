@@ -365,6 +365,32 @@ function inspectSignupEntryState() {
   };
 }
 
+function getSignupEntryDiagnostics() {
+  const actionCandidates = document.querySelectorAll(
+    'a, button, [role="button"], [role="link"], input[type="button"], input[type="submit"]'
+  );
+  const visibleActions = Array.from(actionCandidates)
+    .filter(isVisibleElement)
+    .slice(0, 12)
+    .map((el) => ({
+      tag: (el.tagName || '').toLowerCase(),
+      type: el.getAttribute?.('type') || '',
+      text: getActionText(el).slice(0, 80),
+      enabled: isActionEnabled(el),
+    }))
+    .filter((item) => item.text);
+
+  return {
+    url: location.href,
+    title: document.title || '',
+    readyState: document.readyState || '',
+    hasEmailInput: Boolean(getSignupEmailInput()),
+    hasPasswordInput: Boolean(getSignupPasswordInput()),
+    visibleActions,
+    bodyTextPreview: getPageTextSnapshot().slice(0, 240),
+  };
+}
+
 async function waitForSignupEntryState(options = {}) {
   const {
     timeout = 15000,
@@ -410,6 +436,7 @@ async function ensureSignupEntryReady(timeout = 15000) {
     };
   }
 
+  log(`注册入口识别失败，诊断快照：${JSON.stringify(getSignupEntryDiagnostics())}`, 'warn');
   throw new Error('当前页面没有可用的注册入口，也不在邮箱/密码页。URL: ' + location.href);
 }
 
