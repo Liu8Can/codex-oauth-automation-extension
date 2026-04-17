@@ -547,7 +547,12 @@
     }
 
     async function sendToContentScriptResilient(source, message, options = {}) {
-      const { timeoutMs = 30000, retryDelayMs = 600, logMessage = '' } = options;
+      const {
+        timeoutMs = 30000,
+        retryDelayMs = 600,
+        logMessage = '',
+        responseTimeoutMs,
+      } = options;
       const start = Date.now();
       let lastError = null;
       let logged = false;
@@ -558,7 +563,11 @@
         attempt += 1;
 
         try {
-          return await sendToContentScript(source, message);
+          return await sendToContentScript(
+            source,
+            message,
+            responseTimeoutMs !== undefined ? { responseTimeoutMs } : {}
+          );
         } catch (err) {
           const retryable = isRetryableContentScriptTransportError(err);
           if (!retryable) {
@@ -579,7 +588,11 @@
     }
 
     async function sendToMailContentScriptResilient(mail, message, options = {}) {
-      const { timeoutMs = 45000, maxRecoveryAttempts = 2 } = options;
+      const {
+        timeoutMs = 45000,
+        maxRecoveryAttempts = 2,
+        responseTimeoutMs,
+      } = options;
       const start = Date.now();
       let lastError = null;
       let recoveries = 0;
@@ -589,7 +602,11 @@
         throwIfStopped();
 
         try {
-          return await sendToContentScript(mail.source, message);
+          return await sendToContentScript(
+            mail.source,
+            message,
+            responseTimeoutMs !== undefined ? { responseTimeoutMs } : {}
+          );
         } catch (err) {
           if (!isRetryableContentScriptTransportError(err)) {
             throw err;

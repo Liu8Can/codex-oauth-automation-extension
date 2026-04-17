@@ -136,6 +136,7 @@ const HUMAN_STEP_DELAY_MIN = 700;
 const HUMAN_STEP_DELAY_MAX = 2200;
 const STEP6_MAX_ATTEMPTS = 3;
 const STEP7_MAIL_POLLING_RECOVERY_MAX_ATTEMPTS = 8;
+const OAUTH_FLOW_TIMEOUT_MS = 6 * 60 * 1000;
 const SUB2API_STEP1_RESPONSE_TIMEOUT_MS = 90000;
 const SUB2API_STEP9_RESPONSE_TIMEOUT_MS = 120000;
 const DEFAULT_SUB2API_URL = 'https://sub2api.hisence.fun/admin/accounts';
@@ -315,6 +316,7 @@ const DEFAULT_STATE = {
   autoRunCountdownNote: '',
   signupVerificationRequestedAt: null,
   loginVerificationRequestedAt: null,
+  oauthFlowDeadlineAt: null,
   currentHotmailAccountId: null,
   preferredIcloudHost: '',
 };
@@ -3879,6 +3881,7 @@ function getDownstreamStateResets(step) {
       lastEmailTimestamp: null,
       signupVerificationRequestedAt: null,
       loginVerificationRequestedAt: null,
+      oauthFlowDeadlineAt: null,
       lastSignupCode: null,
       lastLoginCode: null,
       localhostUrl: null,
@@ -3890,6 +3893,7 @@ function getDownstreamStateResets(step) {
       lastEmailTimestamp: null,
       signupVerificationRequestedAt: null,
       loginVerificationRequestedAt: null,
+      oauthFlowDeadlineAt: null,
       lastSignupCode: null,
       lastLoginCode: null,
       localhostUrl: null,
@@ -3900,6 +3904,7 @@ function getDownstreamStateResets(step) {
       lastEmailTimestamp: null,
       signupVerificationRequestedAt: null,
       loginVerificationRequestedAt: null,
+      oauthFlowDeadlineAt: null,
       lastSignupCode: null,
       lastLoginCode: null,
       localhostUrl: null,
@@ -3909,6 +3914,7 @@ function getDownstreamStateResets(step) {
     return {
       lastLoginCode: null,
       loginVerificationRequestedAt: null,
+      oauthFlowDeadlineAt: null,
       localhostUrl: null,
     };
   }
@@ -4569,7 +4575,10 @@ async function handleStepData(step, payload) {
         if (!isLocalhostOAuthCallbackUrl(payload.localhostUrl)) {
           throw new Error('步骤 9 返回了无效的 localhost OAuth 回调地址。');
         }
-        await setState({ localhostUrl: payload.localhostUrl });
+        await setState({
+          localhostUrl: payload.localhostUrl,
+          oauthFlowDeadlineAt: null,
+        });
         broadcastDataUpdate({ localhostUrl: payload.localhostUrl });
       }
       break;
@@ -5689,6 +5698,7 @@ const step7Executor = self.MultiPageBackgroundStep7?.createStep7Executor({
   completeStepFromBackground,
   getErrorMessage,
   getLoginAuthStateLabel,
+  getOAuthFlowStepTimeoutMs,
   getState,
   isStep6RecoverableResult,
   isStep6SuccessResult,
@@ -5697,6 +5707,7 @@ const step7Executor = self.MultiPageBackgroundStep7?.createStep7Executor({
   sendToContentScriptResilient,
   shouldSkipLoginVerificationForCpaCallback,
   skipLoginVerificationStepsForCpaCallback,
+  startOAuthFlowTimeoutWindow,
   STEP6_MAX_ATTEMPTS,
   throwIfStopped,
 });
@@ -5707,6 +5718,8 @@ const step8Executor = self.MultiPageBackgroundStep8?.createStep8Executor({
   confirmCustomVerificationStepBypass: verificationFlowHelpers.confirmCustomVerificationStepBypass,
   ensureStep8VerificationPageReady,
   executeStep7: (...args) => executeStep7(...args),
+  getOAuthFlowRemainingMs,
+  getOAuthFlowStepTimeoutMs,
   getPanelMode,
   getMailConfig,
   getState,
@@ -6180,6 +6193,64 @@ async function refreshOAuthUrlBeforeStep6(state) {
   return refreshResult.oauthUrl;
 }
 
+function buildOAuthFlowTimeoutError(step, actionLabel = '后续授权流程') {
+  return new Error(
+    `步骤 ${step}：从拿到 OAuth 登录地址开始，${Math.round(OAUTH_FLOW_TIMEOUT_MS / 60000)} 分钟内未完成${actionLabel}，结束当前链路，准备从步骤 7 重新开始。`
+  );
+}
+
+function normalizeOAuthFlowDeadlineAt(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) {
+    return null;
+  }
+  return Math.floor(numeric);
+}
+
+async function startOAuthFlowTimeoutWindow(options = {}) {
+  const step = Number(options.step) || 7;
+  const deadlineAt = Date.now() + OAUTH_FLOW_TIMEOUT_MS;
+  await setState({ oauthFlowDeadlineAt: deadlineAt });
+  await addLog(`步骤 ${step}：已拿到新的 OAuth 登录地址，开始 6 分钟倒计时。`, 'info');
+  return deadlineAt;
+}
+
+async function getOAuthFlowRemainingMs(options = {}) {
+  const step = Number(options.step) || 7;
+  const actionLabel = String(options.actionLabel || '后续授权流程').trim() || '后续授权流程';
+  const state = options.state || await getState();
+  const deadlineAt = normalizeOAuthFlowDeadlineAt(state?.oauthFlowDeadlineAt);
+  if (!deadlineAt) {
+    return null;
+  }
+
+  const remainingMs = deadlineAt - Date.now();
+  if (remainingMs <= 0) {
+    throw buildOAuthFlowTimeoutError(step, actionLabel);
+  }
+
+  return remainingMs;
+}
+
+async function getOAuthFlowStepTimeoutMs(defaultTimeoutMs, options = {}) {
+  const normalizedDefault = Math.max(1000, Number(defaultTimeoutMs) || 1000);
+  const reserveMs = Math.max(0, Number(options.reserveMs) || 0);
+  const remainingMs = await getOAuthFlowRemainingMs(options);
+  if (remainingMs === null) {
+    return normalizedDefault;
+  }
+
+  const budgetMs = remainingMs - reserveMs;
+  if (budgetMs <= 0) {
+    throw buildOAuthFlowTimeoutError(
+      Number(options.step) || 7,
+      String(options.actionLabel || '后续授权流程').trim() || '后续授权流程'
+    );
+  }
+
+  return Math.max(1000, Math.min(normalizedDefault, budgetMs));
+}
+
 function isStep6SuccessResult(result) {
   return result?.step6Outcome === 'success';
 }
@@ -6259,8 +6330,9 @@ async function getLoginAuthStateFromContent(options = {}) {
       payload: {},
     },
     {
-      timeoutMs: 15000,
-      retryDelayMs: 600,
+      timeoutMs: options.timeoutMs ?? 15000,
+      retryDelayMs: options.retryDelayMs ?? 600,
+      responseTimeoutMs: options.responseTimeoutMs ?? (options.timeoutMs ?? 15000),
       logMessage,
     }
   );
@@ -6272,8 +6344,8 @@ async function getLoginAuthStateFromContent(options = {}) {
   return result || {};
 }
 
-async function ensureStep8VerificationPageReady() {
-  const pageState = await getLoginAuthStateFromContent();
+async function ensureStep8VerificationPageReady(options = {}) {
+  const pageState = await getLoginAuthStateFromContent(options);
   if (pageState.state === 'verification_page') {
     return pageState;
   }
@@ -6287,6 +6359,7 @@ async function skipLoginVerificationStepsForCpaCallback() {
   await setState({
     lastLoginCode: null,
     loginVerificationRequestedAt: null,
+    oauthFlowDeadlineAt: null,
   });
   await setStepStatus(7, 'skipped');
   await addLog('步骤 7：当前已选择“第七步回调”，直接跳过步骤 7、8。', 'warn');
@@ -6438,7 +6511,7 @@ async function waitForStep8Ready(tabId, timeoutMs = STEP8_READY_WAIT_TIMEOUT_MS)
         flow: 'auth',
         logLabel: '步骤 9：检测到认证页重试页，正在点击“重试”恢复',
         step: 8,
-        timeoutMs: Math.max(5000, Math.min(12000, timeoutMs)),
+        timeoutMs: Math.max(1000, Math.min(12000, timeoutMs)),
       });
       retryRecovered = true;
       await sleepWithStop(250);
@@ -6465,9 +6538,11 @@ async function waitForStep8Ready(tabId, timeoutMs = STEP8_READY_WAIT_TIMEOUT_MS)
   throw new Error('步骤 9：长时间未进入 OAuth 同意页，无法定位“继续”按钮。');
 }
 
-async function prepareStep8DebuggerClick(tabId) {
+async function prepareStep8DebuggerClick(tabId, options = {}) {
+  const timeoutMs = options.timeoutMs ?? 15000;
+  const responseTimeoutMs = options.responseTimeoutMs ?? timeoutMs;
   await ensureStep8SignupPageReady(tabId, {
-    timeoutMs: 15000,
+    timeoutMs,
     logMessage: '步骤 9：认证页内容脚本已失联，正在恢复后继续定位按钮...',
   });
   const result = await sendToContentScriptResilient('signup-page', {
@@ -6475,7 +6550,8 @@ async function prepareStep8DebuggerClick(tabId) {
     source: 'background',
     payload: {},
   }, {
-    timeoutMs: 15000,
+    timeoutMs,
+    responseTimeoutMs,
     retryDelayMs: 600,
     logMessage: '步骤 9：认证页正在切换，等待 OAuth 同意页按钮重新就绪...',
   });
@@ -6487,9 +6563,11 @@ async function prepareStep8DebuggerClick(tabId) {
   return result;
 }
 
-async function triggerStep8ContentStrategy(tabId, strategy) {
+async function triggerStep8ContentStrategy(tabId, strategy, options = {}) {
+  const timeoutMs = options.timeoutMs ?? 15000;
+  const responseTimeoutMs = options.responseTimeoutMs ?? timeoutMs;
   await ensureStep8SignupPageReady(tabId, {
-    timeoutMs: 15000,
+    timeoutMs,
     logMessage: '步骤 9：认证页内容脚本已失联，正在恢复后继续点击“继续”按钮...',
   });
   const result = await sendToContentScriptResilient('signup-page', {
@@ -6501,7 +6579,8 @@ async function triggerStep8ContentStrategy(tabId, strategy) {
       enabledTimeoutMs: 3000,
     },
   }, {
-    timeoutMs: 15000,
+    timeoutMs,
+    responseTimeoutMs,
     retryDelayMs: 600,
     logMessage: '步骤 9：认证页正在切换，等待“继续”按钮重新就绪...',
   });
@@ -6514,8 +6593,11 @@ async function triggerStep8ContentStrategy(tabId, strategy) {
 }
 
 async function recoverAuthRetryPageOnTab(tabId, payload = {}, options = {}) {
+  const readyTimeoutMs = options.readyTimeoutMs ?? 15000;
+  const timeoutMs = options.timeoutMs ?? 15000;
+  const responseTimeoutMs = options.responseTimeoutMs ?? timeoutMs;
   await ensureStep8SignupPageReady(tabId, {
-    timeoutMs: options.readyTimeoutMs ?? 15000,
+    timeoutMs: readyTimeoutMs,
     retryDelayMs: options.retryDelayMs ?? 600,
     logMessage: options.readyLogMessage || '步骤 9：认证页内容脚本已失联，正在恢复后继续处理重试页...',
   });
@@ -6524,7 +6606,8 @@ async function recoverAuthRetryPageOnTab(tabId, payload = {}, options = {}) {
     source: 'background',
     payload,
   }, {
-    timeoutMs: options.timeoutMs ?? 15000,
+    timeoutMs,
+    responseTimeoutMs,
     retryDelayMs: options.retryDelayMs ?? 600,
     logMessage: options.logMessage || '步骤 9：认证页正在切换，等待“重试”按钮重新就绪...',
   });
@@ -6603,7 +6686,7 @@ async function waitForStep8ClickEffect(tabId, baselineUrl, timeoutMs = STEP8_CLI
         flow: 'auth',
         logLabel: '步骤 9：点击“继续”后进入重试页，正在点击“重试”恢复',
         step: 8,
-        timeoutMs: Math.max(5000, Math.min(12000, timeoutMs)),
+        timeoutMs: Math.max(1000, Math.min(12000, timeoutMs)),
       });
       return {
         progressed: false,
@@ -6616,7 +6699,7 @@ async function waitForStep8ClickEffect(tabId, baselineUrl, timeoutMs = STEP8_CLI
       if (!recovered) {
         recovered = true;
         await ensureStep8SignupPageReady(tabId, {
-          timeoutMs: Math.max(3000, Math.min(8000, timeoutMs)),
+          timeoutMs: Math.max(1000, Math.min(8000, timeoutMs)),
           logMessage: '步骤 9：点击后认证页正在重载，正在等待内容脚本重新就绪...',
         }).catch(() => null);
         continue;
@@ -6662,6 +6745,7 @@ const step9Executor = self.MultiPageBackgroundStep9?.createStep9Executor({
   clickWithDebugger,
   completeStepFromBackground,
   ensureStep8SignupPageReady,
+  getOAuthFlowStepTimeoutMs,
   getStep8CallbackUrlFromNavigation,
   getStep8CallbackUrlFromTabUpdate,
   getStep8EffectLabel,

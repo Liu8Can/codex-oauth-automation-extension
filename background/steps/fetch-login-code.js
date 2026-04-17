@@ -9,6 +9,8 @@
       confirmCustomVerificationStepBypass,
       ensureStep8VerificationPageReady,
       executeStep7,
+      getOAuthFlowRemainingMs,
+      getOAuthFlowStepTimeoutMs,
       getPanelMode,
       getMailConfig,
       getState,
@@ -29,6 +31,28 @@
       throwIfStopped,
     } = deps;
 
+    async function getStep8ReadyTimeoutMs(actionLabel) {
+      if (typeof getOAuthFlowStepTimeoutMs !== 'function') {
+        return 15000;
+      }
+
+      return getOAuthFlowStepTimeoutMs(15000, {
+        step: 8,
+        actionLabel,
+      });
+    }
+
+    function getStep8RemainingTimeResolver() {
+      if (typeof getOAuthFlowRemainingMs !== 'function') {
+        return undefined;
+      }
+
+      return async (details = {}) => getOAuthFlowRemainingMs({
+        step: 8,
+        actionLabel: details.actionLabel || '登录验证码流程',
+      });
+    }
+
     async function runStep8Attempt(state) {
       const mail = getMailConfig(state);
       if (mail.error) throw new Error(mail.error);
@@ -45,7 +69,9 @@
       }
 
       throwIfStopped();
-      await ensureStep8VerificationPageReady();
+      await ensureStep8VerificationPageReady({
+        timeoutMs: await getStep8ReadyTimeoutMs('确认登录验证码页已就绪'),
+      });
       await addLog('步骤 8：登录验证码页面已就绪，开始获取验证码。', 'info');
 
       if (shouldUseCustomRegistrationEmail(state)) {
@@ -82,7 +108,8 @@
       let step7ReplayCompleted = false;
 
       await resolveVerificationStep(8, state, mail, {
-        filterAfterTimestamp: mail.provider === HOTMAIL_PROVIDER ? undefined : Math.max(0, stepStartedAt - 60000),
+        filterAfterTimestamp: stepStartedAt,
+        getRemainingTimeMs: getStep8RemainingTimeResolver(),
         requestFreshCodeFirst: false,
         resendIntervalMs: (mail.provider === HOTMAIL_PROVIDER || mail.provider === '2925')
           ? 0
@@ -98,7 +125,9 @@
             logMessage: '步骤 8：正在重新获取最新 CPA OAuth 链接，并快速重走步骤 7...',
             postStepDelayMs: 1200,
           });
-          await ensureStep8VerificationPageReady();
+          await ensureStep8VerificationPageReady({
+            timeoutMs: await getStep8ReadyTimeoutMs('重放步骤 7 后重新确认登录验证码页'),
+          });
           await addLog('步骤 8：登录验证码页面已重新就绪，开始回填刚才获取到的验证码。', 'info');
         } : undefined,
       });
@@ -122,6 +151,7 @@
         await setState({
           lastLoginCode: null,
           loginVerificationRequestedAt: null,
+          oauthFlowDeadlineAt: null,
         });
         await setStepStatus(8, 'skipped');
         await addLog('步骤 8：当前已选择“第七步回调”，本轮无需获取登录验证码。', 'warn');

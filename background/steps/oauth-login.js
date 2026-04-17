@@ -7,6 +7,7 @@
       completeStepFromBackground,
       getErrorMessage,
       getLoginAuthStateLabel,
+      getOAuthFlowStepTimeoutMs,
       getState,
       isStep6RecoverableResult,
       isStep6SuccessResult,
@@ -15,6 +16,7 @@
       sendToContentScriptResilient,
       shouldSkipLoginVerificationForCpaCallback,
       skipLoginVerificationStepsForCpaCallback,
+      startOAuthFlowTimeoutWindow,
       STEP6_MAX_ATTEMPTS,
       throwIfStopped,
     } = deps;
@@ -38,6 +40,15 @@
           const currentState = attempt === 1 ? state : await getState();
           const password = currentState.password || currentState.customPassword || '';
           const oauthUrl = await refreshOAuthUrlBeforeStep6(currentState);
+          if (typeof startOAuthFlowTimeoutWindow === 'function') {
+            await startOAuthFlowTimeoutWindow({ step: 7, oauthUrl });
+          }
+          const loginTimeoutMs = typeof getOAuthFlowStepTimeoutMs === 'function'
+            ? await getOAuthFlowStepTimeoutMs(180000, {
+              step: 7,
+              actionLabel: 'OAuth 登录并进入验证码页',
+            })
+            : 180000;
 
           if (attempt === 1) {
             await addLog('步骤 7：正在打开最新 OAuth 链接并登录...');
@@ -59,7 +70,8 @@
               },
             },
             {
-              timeoutMs: 180000,
+              timeoutMs: loginTimeoutMs,
+              responseTimeoutMs: loginTimeoutMs,
               retryDelayMs: 700,
               logMessage: '步骤 7：认证页正在切换，等待页面重新就绪后继续登录...',
             }

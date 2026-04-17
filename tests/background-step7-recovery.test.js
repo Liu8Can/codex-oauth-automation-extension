@@ -9,10 +9,13 @@ const api = new Function('self', `${source}; return self.MultiPageBackgroundStep
 test('step 8 refreshes CPA oauth via step 7 replay before submitting verification code', async () => {
   const calls = {
     ensureReady: 0,
+    ensureReadyOptions: [],
     executeStep7: 0,
     sleep: [],
     resolveOptions: null,
   };
+  const realDateNow = Date.now;
+  Date.now = () => 123456;
 
   const executor = api.createStep8Executor({
     addLog: async () => {},
@@ -23,13 +26,16 @@ test('step 8 refreshes CPA oauth via step 7 replay before submitting verificatio
     },
     CLOUDFLARE_TEMP_EMAIL_PROVIDER: 'cloudflare-temp-email',
     confirmCustomVerificationStepBypass: async () => {},
-    ensureStep8VerificationPageReady: async () => {
+    ensureStep8VerificationPageReady: async (options) => {
       calls.ensureReady += 1;
+      calls.ensureReadyOptions.push(options || null);
       return { state: 'verification_page' };
     },
     executeStep7: async () => {
       calls.executeStep7 += 1;
     },
+    getOAuthFlowRemainingMs: async () => 5000,
+    getOAuthFlowStepTimeoutMs: async (defaultTimeoutMs) => Math.min(defaultTimeoutMs, 5000),
     getMailConfig: () => ({
       provider: 'qq',
       label: 'QQ 邮箱',
@@ -61,17 +67,28 @@ test('step 8 refreshes CPA oauth via step 7 replay before submitting verificatio
     throwIfStopped: () => {},
   });
 
-  await executor.executeStep8({
-    email: 'user@example.com',
-    password: 'secret',
-    oauthUrl: 'https://oauth.example/latest',
-  });
+  try {
+    await executor.executeStep8({
+      email: 'user@example.com',
+      password: 'secret',
+      oauthUrl: 'https://oauth.example/latest',
+    });
+  } finally {
+    Date.now = realDateNow;
+  }
 
   assert.equal(typeof calls.resolveOptions.beforeSubmit, 'function');
   assert.equal(calls.ensureReady, 2);
   assert.equal(calls.executeStep7, 1);
   assert.deepStrictEqual(calls.sleep, [1200]);
+  assert.equal(calls.resolveOptions.filterAfterTimestamp, 123456);
+  assert.equal(typeof calls.resolveOptions.getRemainingTimeMs, 'function');
+  assert.equal(await calls.resolveOptions.getRemainingTimeMs({ actionLabel: '登录验证码流程' }), 5000);
   assert.equal(calls.resolveOptions.resendIntervalMs, 25000);
+  assert.deepStrictEqual(calls.ensureReadyOptions, [
+    { timeoutMs: 5000 },
+    { timeoutMs: 5000 },
+  ]);
 });
 
 test('step 8 disables resend interval for 2925 mailbox polling', async () => {
@@ -88,6 +105,8 @@ test('step 8 disables resend interval for 2925 mailbox polling', async () => {
     confirmCustomVerificationStepBypass: async () => {},
     ensureStep8VerificationPageReady: async () => ({ state: 'verification_page' }),
     executeStep7: async () => {},
+    getOAuthFlowRemainingMs: async () => 8000,
+    getOAuthFlowStepTimeoutMs: async (defaultTimeoutMs) => Math.min(defaultTimeoutMs, 8000),
     getMailConfig: () => ({
       provider: '2925',
       label: '2925 邮箱',
@@ -124,4 +143,5 @@ test('step 8 disables resend interval for 2925 mailbox polling', async () => {
 
   assert.equal(capturedOptions.resendIntervalMs, 0);
   assert.equal(capturedOptions.beforeSubmit, undefined);
+  assert.equal(typeof capturedOptions.getRemainingTimeMs, 'function');
 });

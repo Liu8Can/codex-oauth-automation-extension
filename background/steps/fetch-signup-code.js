@@ -87,7 +87,7 @@
       }
 
       await resolveVerificationStep(4, state, mail, {
-        filterAfterTimestamp: mail.provider === HOTMAIL_PROVIDER ? undefined : stepStartedAt,
+        filterAfterTimestamp: stepStartedAt,
         requestFreshCodeFirst: mail.provider === HOTMAIL_PROVIDER ? false : true,
         resendIntervalMs: (mail.provider === HOTMAIL_PROVIDER || mail.provider === '2925')
           ? 0

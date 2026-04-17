@@ -76,3 +76,56 @@ test('step 7 retries up to configured limit and then fails', async () => {
   assert.equal(events.sendCalls, 3);
   assert.equal(events.completed, 0);
 });
+
+test('step 7 starts a new oauth timeout window for each refreshed oauth url', async () => {
+  const source = fs.readFileSync('background/steps/oauth-login.js', 'utf8');
+  const globalScope = {};
+  const api = new Function('self', `${source}; return self.MultiPageBackgroundStep7;`)(globalScope);
+
+  const events = {
+    startedWindows: [],
+    timeoutRequests: [],
+  };
+
+  const executor = api.createStep7Executor({
+    addLog: async () => {},
+    completeStepFromBackground: async () => {},
+    getErrorMessage: (error) => error?.message || String(error || ''),
+    getLoginAuthStateLabel: (state) => state || 'unknown',
+    getOAuthFlowStepTimeoutMs: async (defaultTimeoutMs, options) => {
+      events.timeoutRequests.push({ defaultTimeoutMs, options });
+      return 5000;
+    },
+    getState: async () => ({ email: 'user@example.com', password: 'secret' }),
+    isStep6RecoverableResult: (result) => result?.step6Outcome === 'recoverable',
+    isStep6SuccessResult: (result) => result?.step6Outcome === 'success',
+    refreshOAuthUrlBeforeStep6: async () => 'https://oauth.example/latest',
+    reuseOrCreateTab: async () => {},
+    sendToContentScriptResilient: async (_source, _message, options) => ({
+      step6Outcome: 'success',
+      usedTimeoutMs: options.timeoutMs,
+    }),
+    shouldSkipLoginVerificationForCpaCallback: () => false,
+    skipLoginVerificationStepsForCpaCallback: async () => {},
+    startOAuthFlowTimeoutWindow: async (payload) => {
+      events.startedWindows.push(payload);
+    },
+    STEP6_MAX_ATTEMPTS: 3,
+    throwIfStopped: () => {},
+  });
+
+  await executor.executeStep7({ email: 'user@example.com', password: 'secret' });
+
+  assert.deepStrictEqual(events.startedWindows, [
+    { step: 7, oauthUrl: 'https://oauth.example/latest' },
+  ]);
+  assert.deepStrictEqual(events.timeoutRequests, [
+    {
+      defaultTimeoutMs: 180000,
+      options: {
+        step: 7,
+        actionLabel: 'OAuth 登录并进入验证码页',
+      },
+    },
+  ]);
+});
