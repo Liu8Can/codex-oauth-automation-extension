@@ -16,7 +16,7 @@ test('account run history module exposes a factory', () => {
   assert.equal(typeof api?.createAccountRunHistoryHelpers, 'function');
 });
 
-test('account run history helper upgrades old records, filters stopped items and stores normalized failed snapshot records', async () => {
+test('account run history helper upgrades old records, keeps stopped items and stores normalized failed snapshot records', async () => {
   const source = fs.readFileSync('background/account-run-history.js', 'utf8');
   const globalScope = {};
   const api = new Function('self', `${source}; return self.MultiPageBackgroundAccountRunHistory;`)(globalScope);
@@ -93,14 +93,25 @@ test('account run history helper upgrades old records, filters stopped items and
   assert.equal(appended.email, 'latest@example.com');
   assert.equal(appended.finalStatus, 'failed');
   assert.equal(appended.failureLabel, '出现手机号验证');
-  assert.equal(storedHistory.length, 2, '旧的 stopped 记录应在新结构中被过滤掉');
-  assert.equal(storedHistory.some((item) => item.email === 'stop@example.com'), false);
+  assert.equal(storedHistory.length, 3, '旧的 stopped 记录应在新结构中保留');
+  assert.equal(storedHistory.some((item) => item.email === 'stop@example.com' && item.finalStatus === 'stopped'), true);
   assert.equal(storedHistory.some((item) => item.email === 'latest@example.com' && item.retryCount === 2), true);
   assert.equal(storedHistory.some((item) => item.email === 'old@example.com'), true);
   assert.equal(fetchCalled, false);
   assert.equal(helpers.shouldAppendAccountRunTextFile({ accountRunHistoryTextEnabled: false, accountRunHistoryHelperBaseUrl: 'http://127.0.0.1:17373' }), false);
   assert.equal(helpers.shouldAppendAccountRunTextFile({ accountRunHistoryTextEnabled: true, accountRunHistoryHelperBaseUrl: 'http://127.0.0.1:17373' }), true);
-  assert.equal(helpers.buildAccountRunHistoryRecord({ email: 'a@b.com', password: 'x' }, 'stopped', 'stop'), null);
+  const stoppedRecord = helpers.buildAccountRunHistoryRecord({ email: 'a@b.com', password: 'x' }, 'stopped', 'stop');
+  assert.equal(stoppedRecord.recordId, 'a@b.com');
+  assert.equal(stoppedRecord.email, 'a@b.com');
+  assert.equal(stoppedRecord.password, 'x');
+  assert.equal(stoppedRecord.finalStatus, 'stopped');
+  assert.equal(stoppedRecord.retryCount, 0);
+  assert.equal(stoppedRecord.failureLabel, '流程已停止');
+  assert.equal(stoppedRecord.failureDetail, 'stop');
+  assert.equal(stoppedRecord.failedStep, null);
+  assert.equal(stoppedRecord.source, 'manual');
+  assert.equal(stoppedRecord.autoRunContext, null);
+  assert.ok(stoppedRecord.finishedAt);
 });
 
 test('account run history helper clears persisted records and syncs full snapshot payload to local helper', async () => {
@@ -170,6 +181,7 @@ test('account run history helper clears persisted records and syncs full snapsho
     total: 1,
     success: 0,
     failed: 1,
+    stopped: 0,
     retryTotal: 1,
   });
 
@@ -184,6 +196,7 @@ test('account run history helper clears persisted records and syncs full snapsho
       total: 0,
       success: 0,
       failed: 0,
+      stopped: 0,
       retryTotal: 0,
     },
     records: [],

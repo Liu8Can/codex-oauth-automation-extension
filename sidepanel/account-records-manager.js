@@ -39,6 +39,8 @@
           summary.success += 1;
         } else if (record.finalStatus === 'failed') {
           summary.failed += 1;
+        } else if (record.finalStatus === 'stopped') {
+          summary.stopped += 1;
         }
         summary.retryTotal += Math.max(0, Math.floor(Number(record.retryCount) || 0));
         return summary;
@@ -46,6 +48,7 @@
         total: 0,
         success: 0,
         failed: 0,
+        stopped: 0,
         retryTotal: 0,
       });
     }
@@ -81,9 +84,13 @@
     }
 
     function getStatusMeta(record = {}) {
-      return record.finalStatus === 'success'
-        ? { kind: 'success', label: '成功' }
-        : { kind: 'failed', label: '失败' };
+      if (record.finalStatus === 'success') {
+        return { kind: 'success', label: '成功' };
+      }
+      if (record.finalStatus === 'stopped') {
+        return { kind: 'stopped', label: '停止' };
+      }
+      return { kind: 'failed', label: '失败' };
     }
 
     function getRecordSummaryText(record = {}) {
@@ -114,6 +121,7 @@
         createStatChip('总', summary.total),
         createStatChip('成', summary.success, 'is-success'),
         createStatChip('失', summary.failed, 'is-failed'),
+        createStatChip('停', summary.stopped, 'is-stopped'),
         createStatChip('重试', summary.retryTotal, 'is-retry'),
       ].join('');
     }
