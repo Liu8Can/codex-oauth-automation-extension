@@ -5398,6 +5398,7 @@ const mail2925SessionManager = self.MultiPageBackgroundMail2925Session?.createMa
   sendToMailContentScriptResilient,
   setPersistentSettings,
   setState,
+  sleepWithStop,
   throwIfStopped,
   upsertMail2925AccountInList,
 });

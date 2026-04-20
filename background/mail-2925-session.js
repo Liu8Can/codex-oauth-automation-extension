@@ -20,6 +20,7 @@
       sendToMailContentScriptResilient,
       setPersistentSettings,
       setState,
+      sleepWithStop,
       throwIfStopped,
       upsertMail2925AccountInList,
     } = deps;
@@ -364,6 +365,10 @@
       if (forceRelogin) {
         const removedCount = await clearMail2925SessionCookies();
         await addLog(`2925：已清理 ${removedCount} 个登录相关 cookie，准备使用 ${account.email} 重新登录。`, 'info');
+      }
+
+      if (forceRelogin && typeof sleepWithStop === 'function') {
+        await sleepWithStop(3000);
       }
 
       throwIfStopped();
