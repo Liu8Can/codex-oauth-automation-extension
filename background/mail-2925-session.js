@@ -584,6 +584,18 @@
         await failMailboxSession(`2925：${actionLabel}失败，登录后仍未进入收件箱。`);
       }
 
+      if (!account) {
+        await addLog('2925：未触发自动登录，继续复用当前已登录会话。', 'info');
+        return {
+          account: null,
+          mail: getMail2925MailConfig(),
+          result: {
+            ...result,
+            usedExistingSession: true,
+          },
+        };
+      }
+
       await patchMail2925Account(account.id, {
         lastLoginAt: Date.now(),
         lastError: '',

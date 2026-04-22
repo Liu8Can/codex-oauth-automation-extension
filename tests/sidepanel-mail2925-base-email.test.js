@@ -186,6 +186,7 @@ const inputTempEmailBaseUrl = { value: '' };
 const inputTempEmailAdminAuth = { value: '' };
 const inputTempEmailCustomAuth = { value: '' };
 const inputTempEmailReceiveMailbox = { value: '' };
+const inputTempEmailUseRandomSubdomain = { checked: false };
 const inputAutoSkipFailures = { checked: false };
 const inputAutoSkipFailuresThreadIntervalMinutes = { value: '0' };
 const inputAutoDelayEnabled = { checked: false };
