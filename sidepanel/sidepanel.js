@@ -2854,24 +2854,36 @@ function updateMailLoginButtonState() {
 }
 
 function updateMailProviderUI() {
+  const gmailAliasGenerator = typeof GMAIL_ALIAS_GENERATOR === 'string'
+    ? GMAIL_ALIAS_GENERATOR
+    : 'gmail-alias';
+  const customEmailPoolGenerator = typeof CUSTOM_EMAIL_POOL_GENERATOR === 'string'
+    ? CUSTOM_EMAIL_POOL_GENERATOR
+    : 'custom-pool';
+  const customEmailPoolRow = typeof rowCustomEmailPool !== 'undefined'
+    ? rowCustomEmailPool
+    : null;
+  const runCountInput = typeof inputRunCount !== 'undefined'
+    ? inputRunCount
+    : null;
   const use2925 = selectMailProvider.value === '2925';
   const useGmail = selectMailProvider.value === GMAIL_PROVIDER;
   const useMail2925 = selectMailProvider.value === '2925';
   const useMail2925AccountPool = useMail2925 && Boolean(inputMail2925UseAccountPool?.checked);
   const mail2925Mode = getSelectedMail2925Mode();
-  const gmailOnlyGenerators = new Set([GMAIL_ALIAS_GENERATOR, CUSTOM_EMAIL_POOL_GENERATOR]);
+  const gmailOnlyGenerators = new Set([gmailAliasGenerator, customEmailPoolGenerator]);
   Array.from(selectEmailGenerator?.options || []).forEach((option) => {
     if (!option) return;
     if (useGmail) {
       option.hidden = !gmailOnlyGenerators.has(String(option.value || '').trim().toLowerCase());
       return;
     }
-    option.hidden = String(option.value || '').trim().toLowerCase() === GMAIL_ALIAS_GENERATOR;
+    option.hidden = String(option.value || '').trim().toLowerCase() === gmailAliasGenerator;
   });
   if (useGmail && !gmailOnlyGenerators.has(String(selectEmailGenerator.value || '').trim().toLowerCase())) {
-    selectEmailGenerator.value = GMAIL_ALIAS_GENERATOR;
+    selectEmailGenerator.value = gmailAliasGenerator;
   }
-  if (!useGmail && String(selectEmailGenerator.value || '').trim().toLowerCase() === GMAIL_ALIAS_GENERATOR) {
+  if (!useGmail && String(selectEmailGenerator.value || '').trim().toLowerCase() === gmailAliasGenerator) {
     selectEmailGenerator.value = 'duck';
   }
   const selectedGenerator = getSelectedEmailGenerator();
@@ -2898,7 +2910,7 @@ function updateMailProviderUI() {
   const hotmailServiceMode = getSelectedHotmailServiceMode();
   rowInbucketHost.style.display = useInbucket ? '' : 'none';
   rowInbucketMailbox.style.display = useInbucket ? '' : 'none';
-  const useCustomEmailPool = useEmailGenerator && selectedGenerator === CUSTOM_EMAIL_POOL_GENERATOR;
+  const useCustomEmailPool = useEmailGenerator && selectedGenerator === customEmailPoolGenerator;
   const useCloudflare = selectedGenerator === 'cloudflare';
   const useIcloud = selectedGenerator === 'icloud';
   const useCloudflareTempEmailGenerator = selectedGenerator === 'cloudflare-temp-email';
@@ -2913,8 +2925,8 @@ function updateMailProviderUI() {
   if (cloudflareTempEmailSection) {
     cloudflareTempEmailSection.style.display = showCloudflareTempEmailSettings ? '' : 'none';
   }
-  if (rowCustomEmailPool) {
-    rowCustomEmailPool.style.display = useCustomEmailPool ? '' : 'none';
+  if (customEmailPoolRow) {
+    customEmailPoolRow.style.display = useCustomEmailPool ? '' : 'none';
   }
   if (icloudSection) {
     const showIcloudSection = (useEmailGenerator && useIcloud) || useIcloudProvider;
@@ -3043,7 +3055,9 @@ function updateMailProviderUI() {
   if (useCustomEmailPool) {
     syncRunCountFromCustomEmailPool();
   }
-  inputRunCount.disabled = currentAutoRun.autoRunning || useCustomEmailPool;
+  if (runCountInput) {
+    runCountInput.disabled = currentAutoRun.autoRunning || useCustomEmailPool;
+  }
   renderHotmailAccounts();
   if (useMail2925) {
     renderMail2925Accounts();
