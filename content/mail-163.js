@@ -419,6 +419,86 @@ function collectOpenedMailTextCandidates() {
   return texts.sort((a, b) => b.length - a.length);
 }
 
+function parseCurrentReadMailIdFromHash(rawHash = null) {
+  const sourceHash = rawHash !== null && rawHash !== undefined
+    ? rawHash
+    : (typeof location !== 'undefined' ? location.hash : '');
+  const hash = String(sourceHash || '').replace(/^#/, '');
+  if (!hash) {
+    return '';
+  }
+
+  let decoded = hash;
+  try {
+    decoded = decodeURIComponent(hash);
+  } catch {
+    decoded = hash;
+  }
+
+  const match = decoded.match(/"id":"([^"]+)"/);
+  return normalizeText(match?.[1] || '');
+}
+
+function getReadFrameMailId(frame) {
+  const rawSrc = String(frame?.src || '').trim();
+  if (!rawSrc) {
+    return '';
+  }
+
+  try {
+    return normalizeText(new URL(rawSrc, location.href).searchParams.get('mid') || '');
+  } catch {
+    const decoded = (() => {
+      try {
+        return decodeURIComponent(rawSrc);
+      } catch {
+        return rawSrc;
+      }
+    })();
+    const match = decoded.match(/[?&]mid=([^&]+)/);
+    return normalizeText(match?.[1] || '');
+  }
+}
+
+function getReadFrameKey(frame, index = 0) {
+  return normalizeText([
+    frame?.id || '',
+    frame?.name || '',
+    frame?.src || '',
+  ].filter(Boolean).join('|')) || String(index);
+}
+
+function collectOpenedMailFrameCandidates() {
+  const frames = [];
+
+  Array.from(document.querySelectorAll('iframe, frame')).forEach((frame, index) => {
+    let bodyText = '';
+    try {
+      bodyText = normalizeText(frame.contentDocument?.body?.innerText || frame.contentDocument?.body?.textContent || '');
+    } catch {
+      bodyText = '';
+    }
+
+    if (!bodyText) {
+      return;
+    }
+
+    const marker = `${frame.src || ''} ${frame.id || ''} ${frame.name || ''}`.toLowerCase();
+    if (!/readhtml3|framebody|readmodule/.test(marker) && !extractVerificationCode(bodyText)) {
+      return;
+    }
+
+    frames.push({
+      key: getReadFrameKey(frame, index),
+      mailId: getReadFrameMailId(frame),
+      text: bodyText,
+      index,
+    });
+  });
+
+  return frames;
+}
+
 function selectOpenedMailTextCandidate(item, candidates = [], options = {}) {
   const subject = normalizeText(getMailSubjectText(item)).toLowerCase();
   const sender = normalizeText(getMailSenderText(item)).toLowerCase();
@@ -446,6 +526,34 @@ function selectOpenedMailTextCandidate(item, candidates = [], options = {}) {
 }
 
 function readOpenedMailText(item, options = {}) {
+  const preferredMailId = normalizeText(
+    options.preferredMailId || (
+      typeof parseCurrentReadMailIdFromHash === 'function'
+        ? parseCurrentReadMailIdFromHash()
+        : ''
+    )
+  );
+  const frameCandidates = typeof collectOpenedMailFrameCandidates === 'function'
+    ? collectOpenedMailFrameCandidates()
+    : [];
+  if (preferredMailId && frameCandidates.length > 0) {
+    const preferredFrame = frameCandidates
+      .filter((candidate) => candidate.mailId === preferredMailId)
+      .sort((left, right) => right.index - left.index)[0];
+    if (preferredFrame?.text) {
+      return preferredFrame.text;
+    }
+  }
+
+  const excludedFrameKeys = new Set((options.excludedFrameKeys || []).map((value) => normalizeText(value)));
+  const latestNewFrameWithCode = frameCandidates
+    .filter((candidate) => !excludedFrameKeys.has(normalizeText(candidate.key)))
+    .sort((left, right) => right.index - left.index)
+    .find((candidate) => extractVerificationCode(candidate.text));
+  if (latestNewFrameWithCode?.text) {
+    return latestNewFrameWithCode.text;
+  }
+
   const candidates = collectOpenedMailTextCandidates();
   return selectOpenedMailTextCandidate(item, candidates, options);
 }
@@ -476,6 +584,9 @@ async function returnToInbox() {
 
 async function openMailAndGetMessageText(item) {
   const beforeCandidates = collectOpenedMailTextCandidates();
+  const beforeFrameKeys = typeof collectOpenedMailFrameCandidates === 'function'
+    ? collectOpenedMailFrameCandidates().map((candidate) => candidate.key)
+    : [];
   const beforeText = selectOpenedMailTextCandidate(item, beforeCandidates);
   if (typeof simulateClick === 'function') {
     simulateClick(item);
@@ -488,6 +599,8 @@ async function openMailAndGetMessageText(item) {
     await sleep(250);
     const candidate = readOpenedMailText(item, {
       excludedTexts: beforeCandidates,
+      excludedFrameKeys: beforeFrameKeys,
+      preferredMailId: parseCurrentReadMailIdFromHash(),
       allowExcludedFallback: false,
     });
     if (!candidate) {

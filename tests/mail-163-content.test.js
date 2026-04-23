@@ -265,6 +265,10 @@ test('readOpenedMailText can read opened mail body from an accessible iframe doc
     extractFunction('normalizeText'),
     extractFunction('getSearchDocuments'),
     extractFunction('collectOpenedMailTextCandidates'),
+    extractFunction('parseCurrentReadMailIdFromHash'),
+    extractFunction('getReadFrameMailId'),
+    extractFunction('getReadFrameKey'),
+    extractFunction('collectOpenedMailFrameCandidates'),
     extractFunction('selectOpenedMailTextCandidate'),
     extractFunction('readOpenedMailText'),
     extractFunction('extractVerificationCode'),
@@ -317,11 +321,93 @@ return readOpenedMailText(item);
   assert.match(text, /214203/);
 });
 
+test('readOpenedMailText prefers the current read module iframe over older mail bodies', () => {
+  const bundle = [
+    extractFunction('normalizeText'),
+    extractFunction('getSearchDocuments'),
+    extractFunction('collectOpenedMailTextCandidates'),
+    extractFunction('parseCurrentReadMailIdFromHash'),
+    extractFunction('getReadFrameMailId'),
+    extractFunction('getReadFrameKey'),
+    extractFunction('collectOpenedMailFrameCandidates'),
+    extractFunction('selectOpenedMailTextCandidate'),
+    extractFunction('readOpenedMailText'),
+    extractFunction('extractVerificationCode'),
+  ].join('\n');
+
+  const text = new Function(`
+const item = {
+  querySelectorAll() {
+    return [];
+  },
+};
+
+function getMailSubjectText() {
+  return '你的临时 ChatGPT 登录代码';
+}
+
+function getMailSenderText() {
+  return 'OpenAI';
+}
+
+const oldFrame = {
+  src: 'https://webmail.vip.163.com/js6/read/readhtml3.jsp?mid=old-mid',
+  id: 'old_frameBody',
+  name: 'old_frameBody',
+  contentDocument: {
+    body: {
+      innerText: 'Old mail body code 111111',
+      textContent: 'Old mail body code 111111',
+    },
+  },
+};
+const currentFrame = {
+  src: 'https://webmail.vip.163.com/js6/read/readhtml3.jsp?mid=current-mid',
+  id: 'current_frameBody',
+  name: 'current_frameBody',
+  contentDocument: {
+    body: {
+      innerText: 'Current mail body code 222222',
+      textContent: 'Current mail body code 222222',
+    },
+  },
+};
+
+const document = {
+  querySelectorAll(selector) {
+    if (selector === 'iframe, frame') {
+      return [oldFrame, currentFrame];
+    }
+    return [];
+  },
+  body: {
+    innerText: '',
+    textContent: '',
+  },
+};
+
+const location = {
+  hash: '#module=read.ReadModule%7C%7B%22id%22%3A%22current-mid%22%7D',
+  href: 'https://webmail.vip.163.com/js6/main.jsp',
+};
+
+${bundle}
+
+return readOpenedMailText(item);
+`)();
+
+  assert.match(text, /222222/);
+});
+
 test('openMailAndGetMessageText reads opened body text and returns to inbox', async () => {
   const bundle = [
     extractFunction('normalizeText'),
     extractFunction('getSearchDocuments'),
     extractFunction('collectOpenedMailTextCandidates'),
+    extractFunction('parseCurrentReadMailIdFromHash'),
+    extractFunction('getReadFrameMailId'),
+    extractFunction('getReadFrameKey'),
+    extractFunction('collectOpenedMailFrameCandidates'),
     extractFunction('selectOpenedMailTextCandidate'),
     extractFunction('readOpenedMailText'),
     extractFunction('returnToInbox'),
@@ -396,6 +482,10 @@ test('openMailAndGetMessageText ignores stale pre-open text that contains an old
     extractFunction('normalizeText'),
     extractFunction('getSearchDocuments'),
     extractFunction('collectOpenedMailTextCandidates'),
+    extractFunction('parseCurrentReadMailIdFromHash'),
+    extractFunction('getReadFrameMailId'),
+    extractFunction('getReadFrameKey'),
+    extractFunction('collectOpenedMailFrameCandidates'),
     extractFunction('selectOpenedMailTextCandidate'),
     extractFunction('readOpenedMailText'),
     extractFunction('returnToInbox'),
