@@ -55,6 +55,7 @@ test('findMailItems falls back to visible aria-label mail rows when legacy selec
   const bundle = [
     extractFunction('normalizeText'),
     extractFunction('isVisibleNode'),
+    extractFunction('getSearchDocuments'),
     extractFunction('isLikelyMailItemNode'),
     extractFunction('findMailItems'),
   ].join('\n');
@@ -91,6 +92,73 @@ const window = {
     return { display: 'block', visibility: 'visible' };
   },
 };
+
+${bundle}
+
+return { findMailItems };
+`)();
+
+  const rows = api.findMailItems();
+  assert.equal(rows.length, 1);
+});
+
+test('findMailItems can read mail rows from an accessible iframe document', () => {
+  const bundle = [
+    extractFunction('normalizeText'),
+    extractFunction('isVisibleNode'),
+    extractFunction('getSearchDocuments'),
+    extractFunction('isLikelyMailItemNode'),
+    extractFunction('findMailItems'),
+  ].join('\n');
+
+  const api = new Function(`
+const mailRow = {
+  hidden: false,
+  textContent: 'Your temporary ChatGPT verification code 911113',
+  ownerDocument: null,
+  getAttribute(name) {
+    if (name === 'aria-label') return 'Your temporary ChatGPT verification code 911113 发件人 OpenAI';
+    return '';
+  },
+  getBoundingClientRect() {
+    return { width: 600, height: 48 };
+  },
+  matches() {
+    return false;
+  },
+  querySelector() {
+    return null;
+  },
+};
+
+const frameDocument = {
+  documentElement: {},
+  body: { innerText: '', textContent: '' },
+  querySelectorAll(selector) {
+    if (selector === 'div[sign="letter"]') return [];
+    if (selector === '[role="option"][aria-label]') return [mailRow];
+    if (selector === 'iframe, frame') return [];
+    return [];
+  },
+};
+mailRow.ownerDocument = frameDocument;
+
+const document = {
+  body: { innerText: '', textContent: '' },
+  querySelectorAll(selector) {
+    if (selector === 'iframe, frame') {
+      return [{ contentDocument: frameDocument }];
+    }
+    return [];
+  },
+};
+
+const window = {
+  getComputedStyle() {
+    return { display: 'block', visibility: 'visible' };
+  },
+};
+frameDocument.defaultView = window;
 
 ${bundle}
 
@@ -146,6 +214,7 @@ return getMailTimestamp(item);
 test('readOpenedMailText prefers opened body content that contains the verification code', () => {
   const bundle = [
     extractFunction('normalizeText'),
+    extractFunction('getSearchDocuments'),
     extractFunction('collectOpenedMailTextCandidates'),
     extractFunction('selectOpenedMailTextCandidate'),
     extractFunction('readOpenedMailText'),
@@ -191,9 +260,67 @@ return readOpenedMailText(item);
   assert.match(text, /214203/);
 });
 
+test('readOpenedMailText can read opened mail body from an accessible iframe document', () => {
+  const bundle = [
+    extractFunction('normalizeText'),
+    extractFunction('getSearchDocuments'),
+    extractFunction('collectOpenedMailTextCandidates'),
+    extractFunction('selectOpenedMailTextCandidate'),
+    extractFunction('readOpenedMailText'),
+    extractFunction('extractVerificationCode'),
+  ].join('\n');
+
+  const text = new Function(`
+const item = {
+  querySelectorAll() {
+    return [];
+  },
+};
+
+function getMailSubjectText() {
+  return 'Your temporary ChatGPT login code';
+}
+
+function getMailSenderText() {
+  return 'OpenAI';
+}
+
+const frameDocument = {
+  documentElement: {},
+  body: {
+    innerText: 'Enter this temporary verification code to continue: 214203',
+    textContent: 'Enter this temporary verification code to continue: 214203',
+  },
+  querySelectorAll() {
+    return [];
+  },
+};
+
+const document = {
+  querySelectorAll(selector) {
+    if (selector === 'iframe, frame') {
+      return [{ contentDocument: frameDocument }];
+    }
+    return [];
+  },
+  body: {
+    innerText: '',
+    textContent: '',
+  },
+};
+
+${bundle}
+
+return readOpenedMailText(item);
+`)();
+
+  assert.match(text, /214203/);
+});
+
 test('openMailAndGetMessageText reads opened body text and returns to inbox', async () => {
   const bundle = [
     extractFunction('normalizeText'),
+    extractFunction('getSearchDocuments'),
     extractFunction('collectOpenedMailTextCandidates'),
     extractFunction('selectOpenedMailTextCandidate'),
     extractFunction('readOpenedMailText'),
@@ -267,6 +394,7 @@ return {
 test('openMailAndGetMessageText ignores stale pre-open text that contains an old code', async () => {
   const bundle = [
     extractFunction('normalizeText'),
+    extractFunction('getSearchDocuments'),
     extractFunction('collectOpenedMailTextCandidates'),
     extractFunction('selectOpenedMailTextCandidate'),
     extractFunction('readOpenedMailText'),

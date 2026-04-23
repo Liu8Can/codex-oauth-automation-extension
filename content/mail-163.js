@@ -77,8 +77,9 @@ function isVisibleNode(node) {
   if (!node) return false;
   if (node.hidden) return false;
 
-  const style = typeof window.getComputedStyle === 'function'
-    ? window.getComputedStyle(node)
+  const nodeWindow = node.ownerDocument?.defaultView || window;
+  const style = typeof nodeWindow.getComputedStyle === 'function'
+    ? nodeWindow.getComputedStyle(node)
     : null;
   if (style && (style.display === 'none' || style.visibility === 'hidden')) {
     return false;
@@ -92,6 +93,35 @@ function isVisibleNode(node) {
   }
 
   return true;
+}
+
+function getSearchDocuments(rootDocument = document) {
+  const queue = [rootDocument];
+  const docs = [];
+  const visited = new Set();
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!current || visited.has(current)) {
+      continue;
+    }
+    visited.add(current);
+    docs.push(current);
+
+    const frames = current.querySelectorAll?.('iframe, frame') || [];
+    frames.forEach((frame) => {
+      try {
+        const frameDoc = frame.contentDocument;
+        if (frameDoc?.documentElement && !visited.has(frameDoc)) {
+          queue.push(frameDoc);
+        }
+      } catch {
+        // Ignore cross-origin or not-yet-ready frames.
+      }
+    });
+  }
+
+  return docs;
 }
 
 function isLikelyMailItemNode(node) {
@@ -127,14 +157,24 @@ function findMailItems() {
     'div[aria-label]',
   ];
 
-  for (const selector of selectorGroups) {
-    const matches = Array.from(document.querySelectorAll(selector)).filter(isLikelyMailItemNode);
-    if (matches.length > 0) {
-      return matches;
+  const searchDocs = getSearchDocuments(document);
+  let fallbackMatches = [];
+
+  for (const searchDoc of searchDocs) {
+    for (const selector of selectorGroups) {
+      const matches = Array.from(searchDoc.querySelectorAll(selector)).filter(isLikelyMailItemNode);
+      if (matches.length > 0) {
+        if (selector === 'div[sign="letter"]') {
+          return matches;
+        }
+        if (matches.length > fallbackMatches.length) {
+          fallbackMatches = matches;
+        }
+      }
     }
   }
 
-  return [];
+  return fallbackMatches;
 }
 
 function getMailTextBySelectors(item, selectors = []) {
@@ -359,21 +399,23 @@ function collectOpenedMailTextCandidates() {
     '[role="main"]',
   ];
 
-  selectors.forEach((selector) => {
-    document.querySelectorAll(selector).forEach((node) => {
-      pushText(node.innerText || node.textContent);
+  const searchDocs = getSearchDocuments(document);
+  searchDocs.forEach((searchDoc) => {
+    selectors.forEach((selector) => {
+      searchDoc.querySelectorAll(selector).forEach((node) => {
+        pushText(node.innerText || node.textContent);
+      });
     });
+    pushText(searchDoc.body?.innerText || searchDoc.body?.textContent);
   });
 
-  document.querySelectorAll('iframe').forEach((frame) => {
+  document.querySelectorAll('iframe, frame').forEach((frame) => {
     try {
       pushText(frame.contentDocument?.body?.innerText || frame.contentDocument?.body?.textContent);
     } catch {
       // Ignore cross-frame access errors and keep trying other candidates.
     }
   });
-
-  pushText(document.body?.innerText || document.body?.textContent);
   return texts.sort((a, b) => b.length - a.length);
 }
 
@@ -409,12 +451,16 @@ function readOpenedMailText(item, options = {}) {
 }
 
 async function returnToInbox() {
-  const inboxLink = document.querySelector('.nui-tree-item-text[title="收件箱"], [title="收件箱"]');
-  if (inboxLink) {
-    if (typeof simulateClick === 'function') {
-      simulateClick(inboxLink);
-    } else {
-      inboxLink.click();
+  const searchDocs = getSearchDocuments(document);
+  for (const searchDoc of searchDocs) {
+    const inboxLink = searchDoc.querySelector('.nui-tree-item-text[title="收件箱"], [title="收件箱"]');
+    if (inboxLink) {
+      if (typeof simulateClick === 'function') {
+        simulateClick(inboxLink);
+      } else {
+        inboxLink.click();
+      }
+      break;
     }
   }
 
@@ -672,13 +718,16 @@ async function deleteEmail(item, step) {
 
 async function refreshInbox() {
   // Try toolbar "刷 新" button
-  const toolbarBtns = document.querySelectorAll('.nui-btn .nui-btn-text');
-  for (const btn of toolbarBtns) {
-    if (btn.textContent.replace(/\s/g, '') === '刷新') {
-      btn.closest('.nui-btn').click();
-      console.log(MAIL163_PREFIX, 'Clicked "刷新" button');
-      await sleep(800);
-      return;
+  const searchDocs = getSearchDocuments(document);
+  for (const searchDoc of searchDocs) {
+    const toolbarBtns = searchDoc.querySelectorAll('.nui-btn .nui-btn-text');
+    for (const btn of toolbarBtns) {
+      if (btn.textContent.replace(/\s/g, '') === '刷新') {
+        btn.closest('.nui-btn').click();
+        console.log(MAIL163_PREFIX, 'Clicked "刷新" button');
+        await sleep(800);
+        return;
+      }
     }
   }
 
