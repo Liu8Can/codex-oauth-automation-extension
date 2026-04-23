@@ -9,6 +9,7 @@ const api = new Function('self', `${source}; return self.MultiPageBackgroundStep
 test('step 4 passes a fixed 10-minute lookback window to 2925 mailbox polling', async () => {
   let capturedOptions = null;
   let ensureCalls = 0;
+  let ensureOptions = null;
   const tabUpdates = [];
   const tabReuses = [];
   const realDateNow = Date.now;
@@ -25,8 +26,9 @@ test('step 4 passes a fixed 10-minute lookback window to 2925 mailbox polling', 
     },
     completeStepFromBackground: async () => {},
     confirmCustomVerificationStepBypass: async () => {},
-    ensureMail2925MailboxSession: async () => {
+    ensureMail2925MailboxSession: async (options) => {
       ensureCalls += 1;
+      ensureOptions = options;
     },
     getMailConfig: () => ({
       provider: '2925',
@@ -66,6 +68,14 @@ test('step 4 passes a fixed 10-minute lookback window to 2925 mailbox polling', 
   assert.deepStrictEqual(tabUpdates, [
     { tabId: 1, payload: { active: true } },
   ]);
+  assert.deepStrictEqual(ensureOptions, {
+    accountId: null,
+    forceRelogin: false,
+    allowLoginWhenOnLoginPage: true,
+    expectedMailboxEmail: '',
+    actionLabel: '步骤 4：确认 2925 邮箱登录态',
+    stopOnAutoRunFailure: false,
+  });
   assert.equal(capturedOptions.filterAfterTimestamp, 100000);
   assert.equal(capturedOptions.resendIntervalMs, 0);
 });

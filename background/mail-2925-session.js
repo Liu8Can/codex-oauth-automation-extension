@@ -455,6 +455,7 @@
         actionLabel = '确保 2925 邮箱登录态',
         allowLoginWhenOnLoginPage = true,
         expectedMailboxEmail = '',
+        stopOnAutoRunFailure = true,
       } = options;
 
       const normalizedExpectedMailboxEmail = normalizeMailboxEmail(expectedMailboxEmail);
@@ -490,9 +491,11 @@
       });
 
       const failMailboxSession = async (message) => {
-        const stopped = await stopAutoRunForMail2925LoginFailure(`${message}已按手动停止逻辑暂停自动流程。`);
-        if (stopped) {
-          throw new Error('流程已被用户停止。');
+        if (stopOnAutoRunFailure) {
+          const stopped = await stopAutoRunForMail2925LoginFailure(`${message}已按手动停止逻辑暂停自动流程。`);
+          if (stopped) {
+            throw new Error('流程已被用户停止。');
+          }
         }
         throw new Error(message);
       };
@@ -608,9 +611,11 @@
 
         if (!result) {
           const message = `2925：${actionLabel}失败（${getErrorMessage(err) || '登录结果确认超时'}）。`;
-          const stopped = await stopAutoRunForMail2925LoginFailure(`${message}已按手动停止逻辑暂停自动流程。`);
-          if (stopped) {
-            throw new Error('流程已被用户停止。');
+          if (stopOnAutoRunFailure) {
+            const stopped = await stopAutoRunForMail2925LoginFailure(`${message}已按手动停止逻辑暂停自动流程。`);
+            if (stopped) {
+              throw new Error('流程已被用户停止。');
+            }
           }
           throw err;
         }

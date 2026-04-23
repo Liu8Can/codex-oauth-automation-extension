@@ -174,6 +174,7 @@ test('step 8 uses a fixed 10-minute lookback window and disables resend interval
     allowLoginWhenOnLoginPage: true,
     expectedMailboxEmail: 'pool-user@2925.com',
     actionLabel: 'Step 8: ensure 2925 mailbox session',
+    stopOnAutoRunFailure: false,
   });
   assert.deepStrictEqual(tabReuses, []);
   assert.deepStrictEqual(tabUpdates, [

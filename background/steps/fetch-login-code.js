@@ -156,6 +156,7 @@
             allowLoginWhenOnLoginPage: Boolean(state?.mail2925UseAccountPool),
             expectedMailboxEmail: getExpectedMail2925MailboxEmail(state),
             actionLabel: 'Step 8: ensure 2925 mailbox session',
+            stopOnAutoRunFailure: false,
           });
         } else {
           await focusOrOpenMailTab(mail);

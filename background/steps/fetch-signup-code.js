@@ -127,6 +127,7 @@
             allowLoginWhenOnLoginPage: Boolean(state?.mail2925UseAccountPool),
             expectedMailboxEmail: getExpectedMail2925MailboxEmail(state),
             actionLabel: '步骤 4：确认 2925 邮箱登录态',
+            stopOnAutoRunFailure: false,
           });
         } else {
           await focusOrOpenMailTab(mail);
