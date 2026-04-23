@@ -237,6 +237,64 @@ test('step 8 falls back to the run email when the verification page does not exp
   assert.equal(capturedOptions.targetEmail, 'user@example.com');
 });
 
+test('step 8 skips expected 2925 mailbox email check when using custom email pool', async () => {
+  let ensureOptions = null;
+
+  const executor = api.createStep8Executor({
+    addLog: async () => {},
+    chrome: {
+      tabs: {
+        update: async () => {},
+      },
+    },
+    CLOUDFLARE_TEMP_EMAIL_PROVIDER: 'cloudflare-temp-email',
+    confirmCustomVerificationStepBypass: async () => {},
+    ensureMail2925MailboxSession: async (options) => {
+      ensureOptions = options;
+    },
+    ensureStep8VerificationPageReady: async () => ({ state: 'verification_page' }),
+    rerunStep7ForStep8Recovery: async () => {},
+    getOAuthFlowRemainingMs: async () => 8000,
+    getOAuthFlowStepTimeoutMs: async (defaultTimeoutMs) => Math.min(defaultTimeoutMs, 8000),
+    getMailConfig: () => ({
+      provider: '2925',
+      label: '2925 邮箱',
+      source: 'mail-2925',
+      url: 'https://2925.com',
+      navigateOnReuse: false,
+    }),
+    getState: async () => ({
+      email: 'custom@example.com',
+      password: 'secret',
+      emailGenerator: 'custom-pool',
+      mail2925BaseEmail: 'greeneffort@2925.com',
+    }),
+    getTabId: async () => 1,
+    HOTMAIL_PROVIDER: 'hotmail-api',
+    isTabAlive: async () => true,
+    isVerificationMailPollingError: () => false,
+    LUCKMAIL_PROVIDER: 'luckmail-api',
+    resolveVerificationStep: async () => {},
+    reuseOrCreateTab: async () => {},
+    setState: async () => {},
+    setStepStatus: async () => {},
+    shouldUseCustomRegistrationEmail: () => false,
+    STANDARD_MAIL_VERIFICATION_RESEND_INTERVAL_MS: 25000,
+    STEP7_MAIL_POLLING_RECOVERY_MAX_ATTEMPTS: 8,
+    throwIfStopped: () => {},
+  });
+
+  await executor.executeStep8({
+    email: 'custom@example.com',
+    password: 'secret',
+    emailGenerator: 'custom-pool',
+    mail2925BaseEmail: 'greeneffort@2925.com',
+    oauthUrl: 'https://oauth.example/latest',
+  });
+
+  assert.equal(ensureOptions.expectedMailboxEmail, '');
+});
+
 test('step 8 does not rerun step 7 when verification submit lands on add-phone', async () => {
   const calls = {
     rerunStep7: 0,

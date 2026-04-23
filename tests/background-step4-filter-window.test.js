@@ -129,3 +129,47 @@ test('step 4 does not request a fresh code first for Cloudflare temp mail', asyn
   assert.equal(capturedOptions.requestFreshCodeFirst, false);
   assert.equal(capturedOptions.resendIntervalMs, 25000);
 });
+
+test('step 4 skips expected 2925 mailbox email check when using custom email pool', async () => {
+  let ensureOptions = null;
+
+  const executor = api.createStep4Executor({
+    addLog: async () => {},
+    chrome: {
+      tabs: {
+        update: async () => {},
+      },
+    },
+    completeStepFromBackground: async () => {},
+    confirmCustomVerificationStepBypass: async () => {},
+    ensureMail2925MailboxSession: async (options) => {
+      ensureOptions = options;
+    },
+    getMailConfig: () => ({
+      provider: '2925',
+      label: '2925 邮箱',
+      source: 'mail-2925',
+      url: 'https://2925.com',
+    }),
+    getTabId: async () => 1,
+    HOTMAIL_PROVIDER: 'hotmail-api',
+    isTabAlive: async () => true,
+    LUCKMAIL_PROVIDER: 'luckmail-api',
+    CLOUDFLARE_TEMP_EMAIL_PROVIDER: 'cloudflare-temp-email',
+    resolveVerificationStep: async () => {},
+    reuseOrCreateTab: async () => {},
+    sendToContentScriptResilient: async () => ({}),
+    shouldUseCustomRegistrationEmail: () => false,
+    STANDARD_MAIL_VERIFICATION_RESEND_INTERVAL_MS: 25000,
+    throwIfStopped: () => {},
+  });
+
+  await executor.executeStep4({
+    email: 'custom@example.com',
+    password: 'secret',
+    emailGenerator: 'custom-pool',
+    mail2925BaseEmail: 'greeneffort@2925.com',
+  });
+
+  assert.equal(ensureOptions.expectedMailboxEmail, '');
+});

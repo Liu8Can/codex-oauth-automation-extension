@@ -59,6 +59,10 @@
     }
 
     function getExpectedMail2925MailboxEmail(state = {}) {
+      if (String(state?.emailGenerator || '').trim().toLowerCase() === 'custom-pool') {
+        return '';
+      }
+
       if (Boolean(state?.mail2925UseAccountPool)) {
         const currentAccountId = String(state?.currentMail2925AccountId || '').trim();
         const accounts = Array.isArray(state?.mail2925Accounts) ? state.mail2925Accounts : [];
