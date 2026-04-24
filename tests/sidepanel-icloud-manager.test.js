@@ -19,6 +19,16 @@ test('sidepanel source binds the icloud fetch mode control before using it', () 
   assert.match(source, /selectIcloudFetchMode\?\.addEventListener\('change'/);
 });
 
+test('update card highlights exporting config before upgrade', () => {
+  const html = fs.readFileSync('sidepanel/sidepanel.html', 'utf8');
+  const css = fs.readFileSync('sidepanel/sidepanel.css', 'utf8');
+
+  assert.match(html, /<p class="update-card-reminder">请更新前导出配置<\/p>/);
+  assert.match(css, /\.update-card-reminder\s*\{/);
+  assert.match(css, /font-weight:\s*700;/);
+  assert.match(css, /color:\s*var\(--orange\);/);
+});
+
 test('icloud manager exposes a factory and renders empty state', () => {
   const source = fs.readFileSync('sidepanel/icloud-manager.js', 'utf8');
   const windowObject = {};
