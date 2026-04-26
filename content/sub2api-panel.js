@@ -1,4 +1,4 @@
-// content/sub2api-panel.js — 页内脚本：SUB2API 后台（步骤 1、9）
+// content/sub2api-panel.js — 页内脚本：SUB2API 后台（OAuth 生成与回调提交）
 
 console.log('[MultiPage:sub2api-panel] Content script loaded on', location.href);
 
@@ -69,6 +69,7 @@ async function handleStep(step, payload = {}) {
       return step1_generateOpenAiAuthUrl(payload);
     case 10:
     case 12:
+    case 13:
       return step9_submitOpenAiCallback({ ...(payload || {}), visibleStep: step });
     default:
       throw new Error(`sub2api-panel.js 不处理步骤 ${step}`);
@@ -530,11 +531,11 @@ async function step9_submitOpenAiCallback(payload = {}) {
     throw new Error('本次 localhost 回调中的 state 与步骤 1 生成的 state 不一致，请重新执行步骤 1。');
   }
 
-  log('步骤 10：正在向 SUB2API 交换 OpenAI 授权码...');
+  log(`步骤 ${visibleStep}：正在向 SUB2API 交换 OpenAI 授权码...`);
   if (proxy) {
-    log(`步骤 10：使用 SUB2API 默认代理 ${buildProxyDisplayName(proxy)}。`);
+    log(`步骤 ${visibleStep}：使用 SUB2API 默认代理 ${buildProxyDisplayName(proxy)}。`);
   } else {
-    log('步骤 10：未配置 SUB2API 默认代理，本次将不使用代理。');
+    log(`步骤 ${visibleStep}：未配置 SUB2API 默认代理，本次将不使用代理。`);
   }
   const exchangeRequestBody = {
     session_id: sessionId,
