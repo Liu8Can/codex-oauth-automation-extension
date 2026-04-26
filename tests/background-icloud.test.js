@@ -323,6 +323,18 @@ function getErrorMessage(error) {
 function normalizeText(value) {
   return String(value || '').replace(/\\s+/g, ' ').trim();
 }
+function appendIcloudClientQueryParams(url) {
+  return String(url || '');
+}
+function isIcloudMaildomainwsHost() {
+  return false;
+}
+function shouldTryIcloudRequestPageContextFallback() {
+  return false;
+}
+async function icloudRequestViaPageContext() {
+  throw new Error('not expected');
+}
 async function fetch() {
   fetchCalls += 1;
   if (fetchCalls === 1) {
@@ -380,6 +392,18 @@ function getErrorMessage(error) {
 }
 function normalizeText(value) {
   return String(value || '').replace(/\\s+/g, ' ').trim();
+}
+function appendIcloudClientQueryParams(url) {
+  return String(url || '');
+}
+function isIcloudMaildomainwsHost() {
+  return false;
+}
+function shouldTryIcloudRequestPageContextFallback() {
+  return false;
+}
+async function icloudRequestViaPageContext() {
+  throw new Error('not expected');
 }
 async function fetch() {
   fetchCalls += 1;
@@ -451,6 +475,10 @@ async function loadNormalizedIcloudAliases() {
     serviceUrl: 'https://p67-maildomainws.icloud.com',
   };
 }
+async function listIcloudAliases() {
+  const response = await loadNormalizedIcloudAliases();
+  return response.aliases || [];
+}
 function pickReusableIcloudAlias() {
   return null;
 }
@@ -477,6 +505,9 @@ function broadcastIcloudAliasesChanged(payload) {
 function findIcloudAliasByEmail(aliases, email) {
   return (aliases || []).find((alias) => String(alias.email || '').toLowerCase() === String(email || '').toLowerCase()) || null;
 }
+function shouldStopIcloudAutoFetchRetries() {
+  return true;
+}
 ${bundle}
 return {
   fetchIcloudHideMyEmail,
@@ -491,5 +522,5 @@ return {
   assert.equal(email, 'fresh@icloud.com');
   assert.deepEqual(api.readSelectedEmails(), ['fresh@icloud.com']);
   assert.deepEqual(api.readBroadcasts(), [{ reason: 'created', email: 'fresh@icloud.com' }]);
-  assert.match(api.readLogs().map((entry) => entry.message).join('\n'), /按保留成功处理/);
+  assert.match(api.readLogs().map((entry) => entry.message).join('\n'), /已在列表确认别名/);
 });

@@ -142,6 +142,13 @@
 - 贡献模式的侧栏按钮、状态展示和轮询调度应优先收敛到独立 manager，例如 `sidepanel/contribution-mode.js`
 - 如果服务端当前返回“无需手动提交 callback”，扩展端必须把它当兼容成功态处理，不能简单按 HTTP 非 200 直接视为失败
 
+### 3.4.1 iCloud Hide My Email 维护补充
+
+- iCloud Hide My Email 的会话校验、页面上下文回退、别名缓存回退和 `maildomainws` 兼容参数属于同一条链路；修改其中任一环时，必须同步检查列表加载、别名生成、保留、删除、自动运行等待邮箱和 sidepanel 登录提示。
+- iCloud 登录态判断不能只看单个 HTTP 状态码。`401 / 403 / 421 / 429 / 5xx` 可能来自后台请求上下文、CORS 或服务节点波动，必须结合错误文案、页面上下文回退结果和用户提示文案判断。
+- iCloud 别名缓存只能作为短暂失败回退，不允许替代线上列表成为最终状态来源；已用和保留状态仍然以 `manualAliasUsage`、`preservedAliases` 与最新线上列表合并后的结果为准。
+- 如果新增 iCloud 相关回退路径，必须补覆盖登录提示、缓存回退、自动运行停止重试和 reserve 异常恢复的测试，并同步更新 [项目完整链路说明.md](c:/Users/projectf/Downloads/codex注册扩展/项目完整链路说明.md)。
+
 ## 4. 测试规范
 
 ### 4.1 原则
