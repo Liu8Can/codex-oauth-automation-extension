@@ -344,12 +344,62 @@ test('Plus checkout billing uses the detected checkout country before choosing a
   await executor.executePlusCheckoutBilling({ plusCheckoutCountry: 'DE' });
 
   const combinedFillMessage = events.messages.find((entry) => entry.message.type === 'PLUS_CHECKOUT_FILL_BILLING_ADDRESS');
-  assert.equal(requestedCountries[0], 'Australia');
+  assert.equal(requestedCountries[0], 'AU');
   assert.equal(combinedFillMessage.message.payload.addressSeed.countryCode, 'AU');
   assert.equal(combinedFillMessage.message.payload.addressSeed.fallback.region, 'New South Wales');
   assert.deepEqual(JSON.parse(fetchRequests[0].init.body), {
     city: 'Sydney',
     path: '/au-address',
+    method: 'refresh',
+  });
+});
+
+test('Plus checkout billing uses meiguodizhi country paths for localized countries without local seeds', async () => {
+  const fetchRequests = [];
+  const { events, executor } = createExecutorHarness({
+    frames: [
+      { frameId: 0, url: 'https://chatgpt.com/checkout/openai_ie/cs_test' },
+      { frameId: 7, url: 'https://js.stripe.com/v3/elements-inner-payment.html' },
+      { frameId: 8, url: 'https://js.stripe.com/v3/elements-inner-address.html' },
+    ],
+    stateByFrame: {
+      0: { hasPayPal: false, paypalCandidates: [], hasSubscribeButton: true },
+      7: { hasPayPal: true, paypalCandidates: [{ tag: 'button', text: 'PayPal' }] },
+      8: {
+        hasPayPal: false,
+        paypalCandidates: [],
+        billingFieldsVisible: true,
+        countryText: '日本',
+      },
+    },
+    fetchImpl: async (url, init) => {
+      fetchRequests.push({ url, init });
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          status: 'ok',
+          address: {
+            Address: 'トウキョウト, ミナトク, シバダイモン, 10-4',
+            Trans_Address: '10-4, Shiba Daimon 2-chome, Minato-ku, Tokyo',
+            City: 'Tokyo',
+            State: 'Tokyo',
+            Zip_Code: '105-0012',
+          },
+        }),
+      };
+    },
+  });
+
+  await executor.executePlusCheckoutBilling({ plusCheckoutCountry: 'DE' });
+
+  const combinedFillMessage = events.messages.find((entry) => entry.message.type === 'PLUS_CHECKOUT_FILL_BILLING_ADDRESS');
+  assert.equal(combinedFillMessage.message.payload.addressSeed.countryCode, 'JP');
+  assert.equal(combinedFillMessage.message.payload.addressSeed.source, 'meiguodizhi');
+  assert.equal(combinedFillMessage.message.payload.addressSeed.fallback.address1, '10-4, Shiba Daimon 2-chome, Minato-ku, Tokyo');
+  assert.deepEqual(JSON.parse(fetchRequests[0].init.body), {
+    city: 'Tokyo',
+    path: '/jp-address',
     method: 'refresh',
   });
 });

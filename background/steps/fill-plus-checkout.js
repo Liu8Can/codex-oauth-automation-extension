@@ -6,13 +6,30 @@
   const PLUS_CHECKOUT_URL_PATTERN = /^https:\/\/chatgpt\.com\/checkout(?:\/|$)/i;
   const PLUS_CHECKOUT_FRAME_READY_DELAY_MS = 500;
   const MEIGUODIZHI_ADDRESS_ENDPOINT = 'https://www.meiguodizhi.com/api/v1/dz';
-  const MEIGUODIZHI_PATH_BY_COUNTRY = {
-    AU: '/au-address',
-    DE: '/de-address',
-    FR: '/fr-address',
-    US: '/',
+  const MEIGUODIZHI_COUNTRY_CONFIG = {
+    AR: { path: '/ar-address', city: 'Buenos Aires', aliases: ['ar', 'argentina', '阿根廷'] },
+    AU: { path: '/au-address', city: 'Sydney', aliases: ['au', 'aus', 'australia', '澳大利亚'] },
+    CA: { path: '/ca-address', city: 'Toronto', aliases: ['ca', 'canada', '加拿大'] },
+    CN: { path: '/cn-address', city: 'Shanghai', aliases: ['cn', 'china', '中国'] },
+    DE: { path: '/de-address', city: 'Berlin', aliases: ['de', 'deu', 'germany', 'deutschland', '德国'] },
+    ES: { path: '/es-address', city: 'Madrid', aliases: ['es', 'esp', 'spain', '西班牙'] },
+    FR: { path: '/fr-address', city: 'Paris', aliases: ['fr', 'fra', 'france', '法国'] },
+    GB: { path: '/uk-address', city: 'London', aliases: ['gb', 'uk', 'united kingdom', 'britain', 'england', '英国'] },
+    HK: { path: '/hk-address', city: 'Hong Kong', aliases: ['hk', 'hong kong', '香港'] },
+    IT: { path: '/it-address', city: 'Rome', aliases: ['it', 'ita', 'italy', '意大利'] },
+    JP: { path: '/jp-address', city: 'Tokyo', aliases: ['jp', 'jpn', 'japan', '日本', '日本国'] },
+    KR: { path: '/kr-address', city: 'Seoul', aliases: ['kr', 'kor', 'korea', 'south korea', '韩国'] },
+    MY: { path: '/my-address', city: 'Kuala Lumpur', aliases: ['my', 'malaysia', '马来西亚'] },
+    NL: { path: '/nl-address', city: 'Amsterdam', aliases: ['nl', 'netherlands', 'holland', '荷兰'] },
+    PH: { path: '/ph-address', city: 'Manila', aliases: ['ph', 'philippines', '菲律宾'] },
+    RU: { path: '/ru-address', city: 'Moscow', aliases: ['ru', 'russia', '俄罗斯'] },
+    SG: { path: '/sg-address', city: 'Singapore', aliases: ['sg', 'singapore', '新加坡'] },
+    TH: { path: '/th-address', city: 'Bangkok', aliases: ['th', 'thailand', '泰国'] },
+    TR: { path: '/tr-address', city: 'Istanbul', aliases: ['tr', 'turkey', 'turkiye', '土耳其'] },
+    TW: { path: '/tw-address', city: 'Taipei', aliases: ['tw', 'taiwan', '台湾'] },
+    US: { path: '/', city: 'New York', aliases: ['us', 'usa', 'united states', 'united states of america', 'america', '美国'] },
+    VN: { path: '/vn-address', city: 'Ho Chi Minh City', aliases: ['vn', 'vietnam', '越南'] },
   };
-  const MEIGUODIZHI_SUPPORTED_COUNTRIES = new Set(Object.keys(MEIGUODIZHI_PATH_BY_COUNTRY));
 
   function createPlusCheckoutBillingExecutor(deps = {}) {
     const {
@@ -39,6 +56,27 @@
       return String(value || '').replace(/\s+/g, ' ').trim();
     }
 
+    function compactCountryText(value = '') {
+      return normalizeText(value).toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]/g, '');
+    }
+
+    function resolveMeiguodizhiCountryCode(value = '') {
+      const normalized = normalizeText(value);
+      const upper = normalized.toUpperCase();
+      if (MEIGUODIZHI_COUNTRY_CONFIG[upper]) {
+        return upper;
+      }
+      const compact = compactCountryText(normalized);
+      const match = Object.entries(MEIGUODIZHI_COUNTRY_CONFIG).find(([code, config]) => (
+        compact === code.toLowerCase()
+        || (config.aliases || []).some((alias) => {
+          const compactAlias = compactCountryText(alias);
+          return compact === compactAlias || compact.includes(compactAlias);
+        })
+      ));
+      return match?.[0] || '';
+    }
+
     function hasCompleteAddressFallback(seed) {
       const fallback = seed?.fallback || {};
       return Boolean(
@@ -49,9 +87,9 @@
     }
 
     function buildDirectAddressSeed(countryCode, apiAddress, fallbackSeed) {
-      const address1 = normalizeText(apiAddress?.Address);
+      const address1 = normalizeText(apiAddress?.Trans_Address || apiAddress?.Address);
       const city = normalizeText(apiAddress?.City);
-      const region = normalizeText(apiAddress?.State || apiAddress?.State_Full);
+      const region = normalizeText(apiAddress?.State_Full || apiAddress?.State);
       const postalCode = normalizeText(apiAddress?.Zip_Code);
       if (!address1 || !city || !postalCode) {
         return null;
@@ -76,11 +114,12 @@
       if (typeof fetchImpl !== 'function') {
         return null;
       }
-      if (!MEIGUODIZHI_SUPPORTED_COUNTRIES.has(countryCode)) {
+      const countryConfig = MEIGUODIZHI_COUNTRY_CONFIG[countryCode];
+      if (!countryConfig?.path) {
         return null;
       }
-      const path = MEIGUODIZHI_PATH_BY_COUNTRY[countryCode] || MEIGUODIZHI_PATH_BY_COUNTRY.DE;
-      const city = normalizeText(fallbackSeed?.fallback?.city || fallbackSeed?.query || '');
+      const path = countryConfig.path;
+      const city = normalizeText(fallbackSeed?.fallback?.city || fallbackSeed?.query || countryConfig.city);
       const response = await fetchImpl(MEIGUODIZHI_ADDRESS_ENDPOINT, {
         method: 'POST',
         headers: {
@@ -102,18 +141,43 @@
       return buildDirectAddressSeed(countryCode, data.address || {}, fallbackSeed);
     }
 
-    async function resolveBillingAddressSeed(state = {}, countryOverride = '') {
-      const requestedCountry = normalizeText(countryOverride || state.plusCheckoutCountry || 'DE');
-      const fallbackSeed = getAddressSeedForCountry(requestedCountry, {
+    function getLocalAddressSeed(countryCode) {
+      if (typeof getAddressSeedForCountry !== 'function') {
+        return null;
+      }
+      const seed = getAddressSeedForCountry(countryCode, {
         fallbackCountry: 'DE',
       });
-      if (!fallbackSeed) {
-        throw new Error('步骤 7：未找到可用的本地账单地址种子。');
-      }
+      return seed?.countryCode === countryCode ? seed : null;
+    }
 
-      const countryCode = fallbackSeed.countryCode || 'DE';
+    function buildMeiguodizhiLookupSeed(countryCode) {
+      const config = MEIGUODIZHI_COUNTRY_CONFIG[countryCode];
+      if (!config) {
+        return null;
+      }
+      return {
+        countryCode,
+        query: config.city,
+        fallback: {
+          address1: '',
+          city: config.city,
+          region: '',
+          postalCode: '',
+        },
+      };
+    }
+
+    async function resolveBillingAddressSeed(state = {}, countryOverride = '') {
+      const requestedCountry = normalizeText(countryOverride || state.plusCheckoutCountry || 'DE');
+      const countryCode = resolveMeiguodizhiCountryCode(requestedCountry) || 'DE';
+      const localSeed = getLocalAddressSeed(countryCode);
+      const lookupSeed = localSeed || buildMeiguodizhiLookupSeed(countryCode);
+      if (!lookupSeed) {
+        throw new Error(`步骤 7：无法识别账单国家或地区：${requestedCountry || '空'}`);
+      }
       try {
-        const remoteSeed = await fetchMeiguodizhiAddressSeed(countryCode, fallbackSeed);
+        const remoteSeed = await fetchMeiguodizhiAddressSeed(countryCode, lookupSeed);
         if (hasCompleteAddressFallback(remoteSeed)) {
           await addLog(
             `步骤 7：已从 meiguodizhi 接口获取账单地址（${remoteSeed.fallback.city} / ${remoteSeed.fallback.postalCode}），将跳过 Google 地址推荐。`,
@@ -126,7 +190,10 @@
         await addLog(`步骤 7：meiguodizhi 地址接口不可用，回退到本地地址种子：${error?.message || String(error || '')}`, 'warn');
       }
 
-      return fallbackSeed;
+      if (hasCompleteAddressFallback(localSeed)) {
+        return localSeed;
+      }
+      throw new Error(`步骤 7：${requestedCountry} 的 meiguodizhi 地址不可用，且没有本地兜底地址。`);
     }
 
     async function getAlivePlusCheckoutTabId(tabId) {

@@ -689,11 +689,28 @@ function getCountryCandidates(value = '') {
   const raw = normalizeText(value);
   const compact = raw.toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]/g, '');
   const aliases = {
+    AR: ['Argentina', '阿根廷'],
     AU: ['Australia', '澳大利亚'],
+    CA: ['Canada', '加拿大'],
+    CN: ['China', '中国'],
     DE: ['Germany', 'Deutschland', '德国'],
+    ES: ['Spain', '西班牙'],
     FR: ['France', '法国'],
+    GB: ['United Kingdom', 'UK', 'Britain', 'England', '英国'],
+    HK: ['Hong Kong', '香港'],
+    IT: ['Italy', '意大利'],
     JP: ['Japan', '日本', '日本国'],
+    KR: ['Korea', 'South Korea', '韩国'],
+    MY: ['Malaysia', '马来西亚'],
+    NL: ['Netherlands', 'Holland', '荷兰'],
+    PH: ['Philippines', '菲律宾'],
+    RU: ['Russia', '俄罗斯'],
+    SG: ['Singapore', '新加坡'],
+    TH: ['Thailand', '泰国'],
+    TR: ['Turkey', 'Turkiye', '土耳其'],
+    TW: ['Taiwan', '台湾'],
     US: ['United States', 'United States of America', 'USA', '美国'],
+    VN: ['Vietnam', '越南'],
   };
   const direct = aliases[String(raw || '').trim().toUpperCase()] || [];
   const matched = Object.entries(aliases).find(([code, names]) => {
